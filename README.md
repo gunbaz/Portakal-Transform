@@ -1,4 +1,4 @@
-# YZM318---Portakal-Data-Mining-Application
+# YZM318-Portakal-Data-Mining-Application
 
 Bu repository Ankara Üniversitesi 2026 dönemi YZM318 dersi kapsamında kurulmuştur. <br>
 Dr. Öğr. Üyesi Bahaeddin Türkoğlu danışmanlığında AÜ YVZM öğrencileri tarafından geliştirilen "Portakal" veri madenciliği uygulamasının versiyonları burada tutulacaktır.<br>
