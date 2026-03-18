@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QSize
@@ -15,18 +14,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from portakal_app.data.errors import DatasetSaveError, PortakalDataError, UnsupportedFormatError
+from portakal_app.data.models import DatasetHandle
+from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.data.services.save_data_service import SaveDataService
 
-def _dataset_label(dataset_handle: str | None) -> str:
-    if not dataset_handle:
+
+def _dataset_label(dataset_handle: DatasetHandle | None) -> str:
+    if dataset_handle is None:
         return "none"
-    path = Path(dataset_handle)
-    return path.name if path.exists() else dataset_handle
+    return dataset_handle.source.path.name
 
 
 class SaveDataScreen(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._dataset_path: Path | None = None
+        self._import_service = FileImportService()
+        self._save_data_service = SaveDataService()
+        self._dataset_handle: DatasetHandle | None = None
         self.setObjectName("saveDataScreen")
 
         layout = QVBoxLayout(self)
@@ -77,10 +82,18 @@ class SaveDataScreen(QWidget):
     def minimumSizeHint(self) -> QSize:
         return QSize(500, 200)
 
-    def set_dataset(self, dataset_handle: str | None) -> None:
-        self._dataset_path = Path(dataset_handle) if dataset_handle else None
+    def set_save_data_service(self, service: SaveDataService) -> None:
+        self._save_data_service = service
+
+    def set_dataset(self, dataset_handle: DatasetHandle | str | None) -> None:
+        if isinstance(dataset_handle, str):
+            try:
+                dataset_handle = self._import_service.load(dataset_handle)
+            except PortakalDataError:
+                dataset_handle = None
+        self._dataset_handle = dataset_handle
         self._dataset.setText(f"Dataset: {_dataset_label(dataset_handle)}")
-        enabled = self._dataset_path is not None and self._dataset_path.exists()
+        enabled = self._dataset_handle is not None
         self._save_button.setEnabled(enabled)
         self._save_as_button.setEnabled(enabled)
 
@@ -94,42 +107,52 @@ class SaveDataScreen(QWidget):
         return "https://orangedatamining.com/widget-catalog/data/save-data/"
 
     def footer_status_text(self) -> str:
-        if self._dataset_path is None or not self._dataset_path.exists():
+        if self._dataset_handle is None:
             return "0"
-        return self._dataset_path.suffix.lower() or "data"
+        return self._dataset_handle.source.path.suffix.lower() or "data"
 
     def _save_default(self) -> None:
-        if self._dataset_path is None or not self._dataset_path.exists():
+        if self._dataset_handle is None:
             return
-        default_path = self._dataset_path.with_name(f"{self._dataset_path.stem}_copy{self._dataset_path.suffix}")
+        default_path = self._default_target_path()
         self._write_dataset(default_path)
 
     def _save_as(self) -> None:
-        if self._dataset_path is None or not self._dataset_path.exists():
+        if self._dataset_handle is None:
             return
         target_path, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "Save Data As",
-            str(self._dataset_path.with_name(f"{self._dataset_path.stem}_copy{self._dataset_path.suffix}")),
-            "Data Files (*.csv *.tsv *.tab *.xlsx *.xls *.parquet);;All Files (*.*)",
+            str(self._default_target_path()),
+            "Data Files (*.csv *.xlsx *.parquet);;All Files (*.*)",
         )
         if not target_path:
             return
         self._write_dataset(Path(target_path))
 
+    def _default_target_path(self) -> Path:
+        assert self._dataset_handle is not None
+        source_path = self._dataset_handle.source.path
+        supported_export_formats = {"csv": ".csv", "xlsx": ".xlsx", "parquet": ".parquet"}
+        suffix = supported_export_formats.get(self._dataset_handle.source.format, ".csv")
+        return source_path.with_name(f"{source_path.stem}_copy{suffix}")
+
     def _write_dataset(self, target_path: Path) -> None:
-        if self._dataset_path is None:
+        if self._dataset_handle is None:
             return
         try:
-            if target_path.resolve() == self._dataset_path.resolve():
+            if target_path.resolve() == self._dataset_handle.source.path.resolve():
                 QMessageBox.information(self, "Save Data", "Choose a different output path.")
                 return
         except OSError:
             pass
 
         try:
-            shutil.copyfile(self._dataset_path, target_path)
-        except OSError as exc:
+            self._save_data_service.save(self._dataset_handle, str(target_path))
+        except UnsupportedFormatError as exc:
+            QMessageBox.warning(self, "Save Data", str(exc))
+            return
+        except DatasetSaveError as exc:
             QMessageBox.warning(self, "Save Data", f"Could not save dataset.\n\n{exc}")
             return
 

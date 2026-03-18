@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import csv
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QEvent, QObject, Qt, QUrl, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -22,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from portakal_app.data.models import ColumnSchema, DatasetHandle
+from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.ui.icons import get_toolbar_icon
 
 
@@ -37,10 +37,15 @@ TYPE_BADGE_COLORS = {
     "numeric": "#d62828",
     "categorical": "#2ea44f",
     "text": "#6f42c1",
+    "boolean": "#0f766e",
     "datetime": "#1d7ed6",
+    "date": "#2563eb",
+    "time": "#0891b2",
+    "duration": "#7c3aed",
+    "unknown": "#6f6a62",
 }
 
-TYPE_OPTIONS = ["categorical", "numeric", "text", "datetime"]
+TYPE_OPTIONS = ["categorical", "numeric", "text", "boolean", "datetime", "date", "time", "duration", "unknown"]
 ROLE_OPTIONS = ["feature", "target", "meta", "skip"]
 FILE_TYPE_OPTIONS = [
     "Determine type from the file extension",
@@ -70,6 +75,8 @@ class TypeCellWidget(QWidget):
 
         self._combo = QComboBox()
         self._combo.addItems(TYPE_OPTIONS)
+        if self._combo.findText(type_name) < 0:
+            self._combo.addItem(type_name)
         self._combo.setCurrentText(type_name)
         self._combo.currentTextChanged.connect(self._handle_changed)
         layout.addWidget(self._combo, 1)
@@ -96,6 +103,8 @@ class RoleCellWidget(QComboBox):
     def __init__(self, role_name: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.addItems(ROLE_OPTIONS)
+        if self.findText(role_name) < 0:
+            self.addItem(role_name)
         self.setCurrentText(role_name)
         self.currentTextChanged.connect(self.changed.emit)
 
@@ -103,12 +112,14 @@ class RoleCellWidget(QComboBox):
 class FileScreen(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._file_callbacks: list[callable] = []
-        self._reload_callbacks: list[callable] = []
-        self._apply_callbacks: list[callable] = []
-        self._url_callbacks: list[callable] = []
+        self._import_service = FileImportService()
+        self._file_callbacks: list[Callable[[str], None]] = []
+        self._reload_callbacks: list[Callable[[str], None]] = []
+        self._apply_callbacks: list[Callable[[str], None]] = []
+        self._url_callbacks: list[Callable[[str], None]] = []
         self._selected_path: str | None = None
         self._selected_url: str | None = None
+        self._dataset_handle: DatasetHandle | None = None
         self._dirty = False
         self._column_specs: list[FileColumnSpec] = []
         self._sample_rows: list[list[str]] = []
@@ -263,26 +274,46 @@ class FileScreen(QWidget):
         layout.addWidget(self._apply_button)
         return layout
 
-    def on_open_file_requested(self, callback) -> None:
+    def on_open_file_requested(self, callback: Callable[[str], None]) -> None:
         self._file_callbacks.append(callback)
 
-    def on_reload_requested(self, callback) -> None:
+    def on_reload_requested(self, callback: Callable[[str], None]) -> None:
         self._reload_callbacks.append(callback)
 
-    def on_apply_requested(self, callback) -> None:
+    def on_apply_requested(self, callback: Callable[[str], None]) -> None:
         self._apply_callbacks.append(callback)
 
-    def on_open_url_requested(self, callback) -> None:
+    def on_open_url_requested(self, callback: Callable[[str], None]) -> None:
         self._url_callbacks.append(callback)
 
-    def set_selected_file(self, path: str | None) -> None:
-        self._selected_path = path
-        if path:
-            self._file_radio.setChecked(True)
-            self._ensure_combo_value(self._file_combo, path)
-            self._populate_from_path(path)
-        else:
+    def set_selected_file(self, dataset: DatasetHandle | str | None) -> None:
+        if dataset is None:
+            self._dataset_handle = None
+            self._selected_path = None
             self._file_combo.setEditText("")
+            self._set_info_placeholder()
+            self._set_columns(self._placeholder_columns())
+            self._sample_headers = []
+            self._sample_rows = []
+            self._row_count_hint = None
+            self._dirty = False
+            self._update_buttons()
+            return
+
+        if isinstance(dataset, DatasetHandle):
+            self._dataset_handle = dataset
+            self._selected_path = str(dataset.source.path)
+        else:
+            self._selected_path = dataset
+            self._dataset_handle = self._load_dataset_handle(dataset)
+
+        if self._selected_path:
+            self._file_radio.setChecked(True)
+            self._ensure_combo_value(self._file_combo, self._selected_path)
+
+        if self._dataset_handle is not None:
+            self._populate_from_handle(self._dataset_handle)
+        else:
             self._set_info_placeholder()
             self._set_columns(self._placeholder_columns())
         self._dirty = False
@@ -290,6 +321,7 @@ class FileScreen(QWidget):
 
     def set_remote_url(self, url: str | None) -> None:
         self._selected_url = url
+        self._dataset_handle = None
         if url:
             self._url_radio.setChecked(True)
             self._ensure_combo_value(self._url_combo, url)
@@ -383,20 +415,24 @@ class FileScreen(QWidget):
         )
         if not selected:
             return
-        self.set_selected_file(selected)
-        for callback in self._file_callbacks:
-            callback(selected)
+        if self._file_callbacks:
+            for callback in self._file_callbacks:
+                callback(selected)
+        else:
+            self.set_selected_file(selected)
 
     def _handle_reload_clicked(self) -> None:
         source = self.current_source_value()
         if not source:
             return
-        if self._file_radio.isChecked():
-            self._populate_from_path(source)
+        callbacks = self._reload_callbacks if self._file_radio.isChecked() else self._url_callbacks
+        if callbacks:
+            for callback in callbacks:
+                callback(source)
+        elif self._file_radio.isChecked():
+            self.set_selected_file(source)
         else:
             self._populate_from_url(source)
-        for callback in self._reload_callbacks:
-            callback(source)
         self._dirty = False
         self._update_buttons()
 
@@ -407,14 +443,18 @@ class FileScreen(QWidget):
         callbacks = self._apply_callbacks
         if self._url_radio.isChecked():
             callbacks = self._url_callbacks or self._apply_callbacks
-        for callback in callbacks:
-            callback(source)
+        if callbacks:
+            for callback in callbacks:
+                callback(source)
+        elif self._file_radio.isChecked():
+            self.set_selected_file(source)
         self._dirty = False
         self._update_buttons()
 
     def _reset_form(self) -> None:
         self._selected_path = None
         self._selected_url = None
+        self._dataset_handle = None
         self._sample_headers = []
         self._sample_rows = []
         self._row_count_hint = None
@@ -427,24 +467,29 @@ class FileScreen(QWidget):
         self._dirty = False
         self._update_buttons()
 
-    def _populate_from_path(self, path: str) -> None:
-        file_path = Path(path)
-        self._dataset_title.setText(file_path.stem.replace("_", " ").title() or "Dataset")
-        self._dataset_description.setText("Local file source")
-        self._sync_file_type_from_extension(file_path.suffix.lower())
+    def _load_dataset_handle(self, path: str) -> DatasetHandle | None:
+        try:
+            return self._import_service.load(path)
+        except Exception:
+            return None
 
-        columns, rows = self._sample_table_from_path(file_path)
-        self._sample_headers = [spec.name for spec in columns]
-        self._sample_rows = rows
-        self._row_count_hint = self._count_rows_for_source(file_path)
+    def _populate_from_handle(self, dataset: DatasetHandle) -> None:
+        self._dataset_title.setText(dataset.display_name or "Dataset")
+        self._dataset_description.setText("Local file source")
+        self._sync_file_type_from_extension(dataset.source.path.suffix.lower())
+
+        self._sample_headers = list(dataset.dataframe.columns)
+        self._sample_rows = self._rows_as_text(dataset.dataframe.head(12))
+        self._row_count_hint = dataset.row_count
         metrics = [
-            f"Source path: {path}",
-            f"Detected extension: {file_path.suffix.lower() or 'unknown'}",
-            f"{len(columns)} columns discovered",
-            f"{self._row_count_hint or 0} rows detected",
+            f"Source path: {dataset.source.path}",
+            f"Detected extension: {dataset.source.path.suffix.lower() or 'unknown'}",
+            f"{dataset.column_count} columns discovered",
+            f"{dataset.row_count} rows detected",
+            f"Cache file: {dataset.cache_path.name}",
         ]
         self._dataset_metrics.setText("\n".join(metrics))
-        self._set_columns(columns or self._placeholder_columns())
+        self._set_columns(self._columns_from_domain(dataset))
 
     def _populate_from_url(self, url: str) -> None:
         parsed = urlparse(url)
@@ -465,80 +510,28 @@ class FileScreen(QWidget):
         self._row_count_hint = None
         self._set_columns(self._placeholder_columns())
 
-    def _sample_table_from_path(self, path: Path) -> tuple[list[FileColumnSpec], list[list[str]]]:
-        suffix = path.suffix.lower()
-        if suffix not in {".csv", ".tsv", ".tab"}:
-            return self._placeholder_columns(), []
-        try:
-            delimiter = "\t" if suffix in {".tsv", ".tab"} else ","
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
-                reader = csv.reader(handle, delimiter=delimiter)
-                header = next(reader, [])
-                rows: list[list[str]] = []
-                for index, row in enumerate(reader):
-                    rows.append(row)
-                    if index >= 11:
-                        break
-        except (OSError, UnicodeDecodeError, StopIteration):
-            return self._placeholder_columns(), []
+    def _columns_from_domain(self, dataset: DatasetHandle) -> list[FileColumnSpec]:
+        return [self._column_from_schema(column) for column in dataset.domain.columns]
 
-        columns: list[FileColumnSpec] = []
-        for column_index, column_name in enumerate(header[:12]):
-            values = [row[column_index] for row in rows if column_index < len(row)]
-            inferred_type = self._infer_column_type(values)
-            role_name = "target" if column_index == len(header[:12]) - 1 and len(header) > 1 else "feature"
-            preview = ", ".join(dict.fromkeys(values[:3])) if inferred_type == "categorical" else ""
-            columns.append(FileColumnSpec(column_name, inferred_type, role_name, preview))
-        return columns, rows
-
-    def _count_rows_for_source(self, path: Path) -> int:
-        suffix = path.suffix.lower()
-        if suffix not in {".csv", ".tsv", ".tab"}:
-            return len(self._sample_rows)
-        try:
-            delimiter = "\t" if suffix in {".tsv", ".tab"} else ","
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
-                reader = csv.reader(handle, delimiter=delimiter)
-                next(reader, None)
-                return sum(1 for _ in reader)
-        except (OSError, UnicodeDecodeError):
-            return len(self._sample_rows)
+    def _column_from_schema(self, column: ColumnSchema) -> FileColumnSpec:
+        preview = ", ".join(column.sample_values)
+        return FileColumnSpec(
+            name=column.name,
+            type_name=column.logical_type,
+            role_name=column.role,
+            values_preview=preview,
+        )
 
     def _full_table_from_current_source(self) -> tuple[list[str], list[list[str]]]:
-        if not self._selected_path:
+        if self._dataset_handle is None:
             return self._sample_headers, self._sample_rows
-        path = Path(self._selected_path)
-        suffix = path.suffix.lower()
-        if suffix not in {".csv", ".tsv", ".tab"}:
-            return self._sample_headers, self._sample_rows
-        try:
-            delimiter = "\t" if suffix in {".tsv", ".tab"} else ","
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
-                reader = csv.reader(handle, delimiter=delimiter)
-                headers = next(reader, [])
-                rows = [row for row in reader]
-        except (OSError, UnicodeDecodeError, StopIteration):
-            return self._sample_headers, self._sample_rows
-        return headers, rows
+        return list(self._dataset_handle.dataframe.columns), self._rows_as_text(self._dataset_handle.dataframe)
 
-    def _infer_column_type(self, values: list[str]) -> str:
-        cleaned = [value.strip() for value in values if value.strip()]
-        if not cleaned:
-            return "text"
-        if all(self._is_float(value) for value in cleaned):
-            return "numeric"
-        if all("-" in value or "/" in value for value in cleaned[:5]):
-            return "datetime"
-        if len(set(cleaned)) <= max(12, len(cleaned) // 2):
-            return "categorical"
-        return "text"
+    def _rows_as_text(self, dataframe) -> list[list[str]]:
+        return [[self._cell_to_text(value) for value in row] for row in dataframe.rows()]
 
-    def _is_float(self, value: str) -> bool:
-        try:
-            float(value)
-        except ValueError:
-            return False
-        return True
+    def _cell_to_text(self, value: object) -> str:
+        return "" if value is None else str(value)
 
     def _sync_file_type_from_extension(self, suffix: str) -> None:
         mapping = {

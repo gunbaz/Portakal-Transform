@@ -1,0 +1,14 @@
+class PortakalDataError(Exception):
+    """Base error for dataset loading and saving failures."""
+
+
+class UnsupportedFormatError(PortakalDataError):
+    """Raised when the requested file format is not supported."""
+
+
+class DatasetLoadError(PortakalDataError):
+    """Raised when a dataset cannot be loaded into a handle."""
+
+
+class DatasetSaveError(PortakalDataError):
+    """Raised when a dataset cannot be exported."""

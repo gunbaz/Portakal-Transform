@@ -487,6 +487,20 @@ def test_file_dialog_footer_refreshes_after_file_selection(app, tmp_path):
     assert dialog._status_label.text() == "4"
 
 
+def test_main_window_stores_dataset_handle_after_file_selection(app, tmp_path):
+    window = MainWindow()
+    csv_path = tmp_path / "rows.csv"
+    csv_path.write_text("id,label\n1,A\n2,B\n", encoding="utf-8")
+
+    window._handle_file_selected(str(csv_path))
+
+    assert window.state.current_dataset is not None
+    assert window.state.current_dataset.row_count == 2
+    assert window.state.current_dataset.column_count == 2
+    assert window.state.current_dataset_path == str(csv_path)
+    assert window.state.current_dataset.source.path == csv_path
+
+
 def test_widget_popup_data_action_opens_dialog(app, monkeypatch):
     window = MainWindow()
     file_node = window._workspace.canvas.add_workflow_node("file")

@@ -27,6 +27,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from portakal_app.data.errors import PortakalDataError
+from portakal_app.data.models import DatasetHandle
+from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.data.services.save_data_service import SaveDataService
 from portakal_app.models import AppState, DataInfoViewModel, MetricCardData, SuggestionItem, WidgetDefinition
 from portakal_app.ui.catalog import build_categories, build_widgets
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
@@ -158,6 +162,8 @@ class MainWindow(QMainWindow):
         self._redo_history: list[dict[str, object]] = []
         self._saved_snapshot: dict[str, object] | None = None
         self._history_guard = False
+        self._file_import_service = FileImportService()
+        self._save_data_service = SaveDataService()
 
         self._build_layout()
         self._register_screens()
@@ -367,11 +373,14 @@ class MainWindow(QMainWindow):
             self._workspace.register_screen(widget.id, screen)
             if isinstance(screen, FileScreen):
                 screen.on_open_file_requested(self._handle_file_selected)
+                screen.on_reload_requested(self._handle_file_selected)
+                screen.on_apply_requested(self._handle_file_selected)
             if isinstance(screen, DataInfoScreen):
                 self._prime_data_info_screen(screen)
             if isinstance(screen, DataTableScreen):
                 screen.set_dataset(None)
             if isinstance(screen, SaveDataScreen):
+                screen.set_save_data_service(self._save_data_service)
                 screen.set_dataset(None)
 
     def _connect_scene_signals(self) -> None:
@@ -423,23 +432,13 @@ class MainWindow(QMainWindow):
         self._state_store.update(selected_widget=widget_id, status_message=f"{widget.label} added to the workflow.")
 
     def _handle_file_selected(self, path: str) -> None:
-        dataset_id = Path(path).name
-        self._state_store.update(
-            current_dataset_id=dataset_id,
-            current_dataset_path=path,
-            status_message=f"Selected dataset: {dataset_id}",
-        )
-        self._workspace.set_current_dataset_path(path)
-        for widget in self._workspace.all_screens():
-            if isinstance(widget, FileScreen):
-                widget.set_selected_file(path)
-            if isinstance(widget, DataInfoScreen):
-                widget.set_dataset(path)
-            if isinstance(widget, DataTableScreen):
-                widget.set_dataset(path)
-            if isinstance(widget, SaveDataScreen):
-                widget.set_dataset(path)
-        self._workspace.refresh_dialog_footers()
+        try:
+            dataset = self._file_import_service.load(path)
+        except PortakalDataError as exc:
+            QMessageBox.warning(self, "Open Dataset", str(exc))
+            self._state_store.update(status_message=f"Could not load dataset: {Path(path).name}")
+            return
+        self._apply_dataset(dataset, status_message=f"Selected dataset: {dataset.source.path.name}")
 
     def _on_state_changed(self, state: AppState) -> None:
         self._status_bar.set_message(state.status_message)
@@ -475,22 +474,39 @@ class MainWindow(QMainWindow):
         self._update_action_states()
 
     def _apply_dataset_path(self, path: str | None) -> None:
-        dataset_id = Path(path).name if path else None
+        dataset: DatasetHandle | None = None
+        if path:
+            try:
+                dataset = self._file_import_service.load(path)
+            except PortakalDataError as exc:
+                QMessageBox.warning(self, "Load Workflow Dataset", str(exc))
+        self._apply_dataset(dataset, path=path, status_message="Workflow loaded." if path else "Ready")
+
+    def _apply_dataset(
+        self,
+        dataset: DatasetHandle | None,
+        *,
+        path: str | None = None,
+        status_message: str,
+    ) -> None:
+        dataset_path = str(dataset.source.path) if dataset is not None else path
+        dataset_id = dataset.dataset_id if dataset is not None else (Path(path).name if path else None)
         self._state_store.update(
+            current_dataset=dataset,
             current_dataset_id=dataset_id,
-            current_dataset_path=path,
-            status_message="Workflow loaded." if path else "Ready",
+            current_dataset_path=dataset_path,
+            status_message=status_message,
         )
-        self._workspace.set_current_dataset_path(path)
+        self._workspace.set_current_dataset_path(dataset_path)
         for widget in self._workspace.all_screens():
             if isinstance(widget, FileScreen):
-                widget.set_selected_file(path)
+                widget.set_selected_file(dataset or dataset_path)
             if isinstance(widget, DataInfoScreen):
-                widget.set_dataset(path)
+                widget.set_dataset(dataset or dataset_path)
             if isinstance(widget, DataTableScreen):
-                widget.set_dataset(path)
+                widget.set_dataset(dataset or dataset_path)
             if isinstance(widget, SaveDataScreen):
-                widget.set_dataset(path)
+                widget.set_dataset(dataset)
         self._workspace.refresh_dialog_footers()
 
     def _apply_workflow_info(self, workflow_info: dict[str, object]) -> None:
