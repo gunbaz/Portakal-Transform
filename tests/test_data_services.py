@@ -15,12 +15,15 @@ from portakal_app.data.errors import (
 )
 from portakal_app.data.models import CSVImportOptions, DomainColumnEdit, DomainEditRequest
 from portakal_app.data.services.column_statistics_service import ColumnStatisticsService
+from portakal_app.data.services.color_settings_service import ColorSettingsService
 from portakal_app.data.services.data_info_service import DataInfoService
+from portakal_app.data.services.dataset_catalog_service import DatasetCatalogService
 from portakal_app.data.services.domain_transform_service import DomainTransformService
 from portakal_app.data.services.feature_ranking_service import FeatureRankingService
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.data.services.llm_analyzer import LLMAnalyzer
 from portakal_app.data.services.llm_context_builder import LLMContextBuilder
+from portakal_app.data.services.paint_data_service import PaintDataService
 from portakal_app.data.services.profiling_service import ProfilingService
 from portakal_app.data.services.save_data_service import SaveDataService
 from portakal_app.models import LLMSessionConfig
@@ -291,6 +294,47 @@ def test_feature_ranking_service_supports_top_n_filter_and_heuristic(tmp_path):
     assert len(filtered) == 1
     assert filtered[0].feature_name == "signal"
     assert heuristic[0].method == "Heuristic"
+
+
+def test_dataset_catalog_service_exposes_curated_downloadable_entries():
+    service = DatasetCatalogService()
+
+    entries = service.available_datasets()
+
+    assert len(entries) == 15
+    assert entries[0].download_url.startswith("https://")
+    assert "All" in service.available_domains()
+
+
+def test_paint_data_service_builds_normalized_snapshot_and_dataset(tmp_path):
+    source_path = tmp_path / "paint-source.csv"
+    pl.DataFrame({"x_raw": [10, 20], "y_raw": [5, 15], "label": ["A", "B"]}).write_csv(source_path)
+    dataset = FileImportService().load(str(source_path))
+    service = PaintDataService()
+
+    snapshot = service.build_snapshot(dataset)
+    painted = service.build_dataset(snapshot)
+
+    assert snapshot.x_name == "x_raw"
+    assert snapshot.y_name == "y_raw"
+    assert len(snapshot.points) == 2
+    assert painted.row_count == 2
+    assert painted.column_count == 3
+    assert painted.annotations["generated_by"] == "paint-data"
+
+
+def test_color_settings_service_builds_and_applies_state(tmp_path):
+    source_path = tmp_path / "color-source.csv"
+    pl.DataFrame({"amount": [1, 2, 3], "category": ["A", "B", "A"]}).write_csv(source_path)
+    dataset = FileImportService().load(str(source_path))
+    service = ColorSettingsService()
+
+    state = service.build_state(dataset)
+    colored = service.apply(dataset, state)
+
+    assert "category" in state["discrete"]
+    assert "amount" in state["numeric"]
+    assert colored.annotations["color_settings"]["discrete"]["category"]["A"]
 
 
 class _FakeResponse:

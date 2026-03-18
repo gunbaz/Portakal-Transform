@@ -24,6 +24,7 @@ python -m pip install -e .[dev]
 Run the app:
 
 ```powershell
+$env:PYTHONPATH='src'
 python -m portakal_app
 ```
 
@@ -35,13 +36,30 @@ pytest
 
 ## Current UI Scope
 
-- The app shell, workflow canvas, popup widget windows, and active `Data` widgets are implemented.
+- The app shell, workflow canvas, popup widget windows, and the current `Data` workflow are implemented.
 - Active `Data` widgets:
   - `File`
+  - `CSV File Import`
+  - `Datasets`
   - `Data Table`
+  - `Paint Data`
   - `Data Info`
+  - `Rank`
+  - `Edit Domain`
+  - `Color`
+  - `Column Statistics`
   - `Save Data`
-- Placeholder widgets are intentionally empty. They preserve the Orange-like catalog, layout, and connection model for later teams.
+- `Datasets` ships with 15 curated downloadable datasets.
+- `Paint Data` supports manual point editing with Orange-inspired tools.
+- `Color` supports discrete value colors and numeric gradient assignments.
+- Remaining widgets in `Transform`, `Visualize`, `Model`, `Evaluate`, and `Unsupervised` are still placeholders.
+
+## Workflow Data Rules
+
+- Data is no longer shown globally in every widget.
+- A widget with an input port only receives dataset content while it has a valid upstream `Data` path in the workflow graph.
+- If the connection is removed, the widget clears its loaded dataset state.
+- Source widgets (`File`, `CSV File Import`, `Datasets`) remain responsible for introducing data into the workflow.
 
 ## Frozen Popup Rules
 

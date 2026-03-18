@@ -30,10 +30,13 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.errors import PortakalDataError
 from portakal_app.data.models import DatasetHandle
+from portakal_app.data.services.color_settings_service import ColorSettingsService
 from portakal_app.data.services.data_info_service import DataInfoService
+from portakal_app.data.services.dataset_catalog_service import DatasetCatalogService
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.data.services.llm_analyzer import LLMAnalyzer
 from portakal_app.data.services.llm_context_builder import LLMContextBuilder
+from portakal_app.data.services.paint_data_service import PaintDataService
 from portakal_app.data.services.profiling_service import ProfilingService
 from portakal_app.data.services.preview_service import PreviewService
 from portakal_app.data.services.save_data_service import SaveDataService
@@ -44,12 +47,15 @@ from portakal_app.models import (
     WidgetDefinition,
 )
 from portakal_app.ui.catalog import build_categories, build_widgets
+from portakal_app.ui.screens.color_screen import ColorScreen
 from portakal_app.ui.screens.column_statistics_screen import ColumnStatisticsScreen
 from portakal_app.ui.screens.csv_import_screen import CSVImportScreen
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
 from portakal_app.ui.screens.data_table_screen import DataTableScreen
+from portakal_app.ui.screens.datasets_screen import DatasetsScreen
 from portakal_app.ui.screens.edit_domain_screen import EditDomainScreen
 from portakal_app.ui.screens.file_screen import FileScreen
+from portakal_app.ui.screens.paint_data_screen import PaintDataScreen
 from portakal_app.ui.screens.rank_screen import RankScreen
 from portakal_app.ui.screens.save_data_screen import SaveDataScreen
 from portakal_app.ui.shell.sidebar import SidebarCategoryList
@@ -314,6 +320,9 @@ class MainWindow(QMainWindow):
         self._llm_session_config = LLMSessionConfig()
         self._preview_service = PreviewService()
         self._save_data_service = SaveDataService()
+        self._dataset_catalog_service = DatasetCatalogService()
+        self._paint_data_service = PaintDataService()
+        self._color_settings_service = ColorSettingsService()
 
         self._build_layout()
         self._register_screens()
@@ -528,6 +537,10 @@ class MainWindow(QMainWindow):
             if isinstance(screen, CSVImportScreen):
                 screen.on_import_requested(self._handle_imported_dataset)
                 screen.set_dataset(None)
+            if isinstance(screen, DatasetsScreen):
+                screen.set_dataset_catalog_service(self._dataset_catalog_service)
+                screen.on_dataset_selected(self._handle_imported_dataset)
+                screen.set_dataset(None)
             if isinstance(screen, DataInfoScreen):
                 screen.set_data_info_service(self._data_info_service)
                 screen.set_llm_context_builder(self._llm_context_builder)
@@ -537,7 +550,15 @@ class MainWindow(QMainWindow):
             if isinstance(screen, DataTableScreen):
                 screen.set_preview_service(self._preview_service)
                 screen.set_dataset(None)
+            if isinstance(screen, PaintDataScreen):
+                screen.set_paint_data_service(self._paint_data_service)
+                screen.on_apply_requested(self._handle_imported_dataset)
+                screen.set_dataset(None)
             if isinstance(screen, EditDomainScreen):
+                screen.on_apply_requested(self._handle_transformed_dataset)
+                screen.set_dataset(None)
+            if isinstance(screen, ColorScreen):
+                screen.set_color_settings_service(self._color_settings_service)
                 screen.on_apply_requested(self._handle_transformed_dataset)
                 screen.set_dataset(None)
             if isinstance(screen, ColumnStatisticsScreen):
@@ -650,24 +671,7 @@ class MainWindow(QMainWindow):
         )
         self._workspace.set_current_dataset(dataset)
         self._workspace.set_current_dataset_path(dataset_path)
-        for widget in self._workspace.all_screens():
-            if isinstance(widget, FileScreen):
-                widget.set_selected_file(dataset or dataset_path)
-            if isinstance(widget, CSVImportScreen):
-                widget.set_dataset(dataset)
-            if isinstance(widget, DataInfoScreen):
-                widget.set_dataset(dataset or dataset_path)
-            if isinstance(widget, DataTableScreen):
-                widget.set_dataset(dataset or dataset_path)
-            if isinstance(widget, EditDomainScreen):
-                widget.set_dataset(dataset or dataset_path)
-            if isinstance(widget, ColumnStatisticsScreen):
-                widget.set_dataset(dataset or dataset_path)
-            if isinstance(widget, RankScreen):
-                widget.set_dataset(dataset or dataset_path)
-            if isinstance(widget, SaveDataScreen):
-                widget.set_dataset(dataset)
-        self._workspace.refresh_dialog_footers()
+        self._propagate_dataset_to_screens(dataset, dataset_path)
 
     def _apply_workflow_info(self, workflow_info: dict[str, object]) -> None:
         title = str(workflow_info.get("title") or "Untitled")
@@ -688,8 +692,46 @@ class MainWindow(QMainWindow):
             return
         self._undo_history.append(copy.deepcopy(snapshot))
         self._redo_history.clear()
+        self._propagate_dataset_to_screens(self.state.current_dataset, self.state.current_dataset_path)
         self._refresh_modified_state()
         self._update_action_states()
+
+    def _propagate_dataset_to_screens(self, dataset: DatasetHandle | None, dataset_path: str | None) -> None:
+        for widget_id, widget in self._workspace.screen_items():
+            receives_data = self._widget_receives_data(widget_id)
+            dataset_or_path = (dataset or dataset_path) if receives_data else None
+            dataset_only = dataset if receives_data else None
+
+            if isinstance(widget, FileScreen):
+                widget.set_selected_file(dataset or dataset_path)
+            if isinstance(widget, CSVImportScreen):
+                widget.set_dataset(dataset)
+            if isinstance(widget, DatasetsScreen):
+                widget.set_dataset(dataset)
+            if isinstance(widget, DataInfoScreen):
+                widget.set_dataset(dataset_or_path)
+            if isinstance(widget, DataTableScreen):
+                widget.set_dataset(dataset_or_path)
+            if isinstance(widget, PaintDataScreen):
+                widget.set_dataset(dataset_only)
+            if isinstance(widget, EditDomainScreen):
+                widget.set_dataset(dataset_or_path)
+            if isinstance(widget, ColorScreen):
+                widget.set_dataset(dataset_only)
+            if isinstance(widget, ColumnStatisticsScreen):
+                widget.set_dataset(dataset_or_path)
+            if isinstance(widget, RankScreen):
+                widget.set_dataset(dataset_or_path)
+            if isinstance(widget, SaveDataScreen):
+                widget.set_dataset(dataset_only)
+        self._workspace.refresh_dialog_footers()
+
+    def _widget_receives_data(self, widget_id: str) -> bool:
+        definition = self._widget_index[widget_id]
+        if not definition.input_ports:
+            return True
+        scene = self._workspace.canvas.workflow_scene
+        return scene.widget_has_data_path(widget_id)
 
     def _refresh_modified_state(self) -> None:
         current = self._serialize_workflow()

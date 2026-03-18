@@ -606,6 +606,9 @@ def test_rank_screen_supports_target_override_filter_and_top_n(app, tmp_path):
 
 def test_edit_domain_apply_updates_main_window_dataset(app, tmp_path):
     window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    target = window._workspace.canvas.add_workflow_node("edit-domain")
+    assert window._workspace.canvas.workflow_scene.create_connection(source.node_id, target.node_id)
     csv_path = tmp_path / "window-domain.csv"
     csv_path.write_text("value,label\n1,A\n2,B\n", encoding="utf-8")
     window._handle_file_selected(str(csv_path))
@@ -620,6 +623,9 @@ def test_edit_domain_apply_updates_main_window_dataset(app, tmp_path):
 
 def test_csv_import_apply_updates_main_window_dataset_and_data_info(app, tmp_path):
     window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("csv-import")
+    target = window._workspace.canvas.add_workflow_node("data-info")
+    assert window._workspace.canvas.workflow_scene.create_connection(source.node_id, target.node_id)
     screen = next(widget for widget in window._workspace.all_screens() if isinstance(widget, CSVImportScreen))
     csv_path = tmp_path / "window-import.txt"
     csv_path.write_text("# comment\ncity;value\nAnkara;1\nIzmir;2\n", encoding="utf-8")
@@ -637,6 +643,9 @@ def test_csv_import_apply_updates_main_window_dataset_and_data_info(app, tmp_pat
 
 def test_edit_domain_apply_updates_global_preview_snapshot(app, tmp_path):
     window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    target = window._workspace.canvas.add_workflow_node("edit-domain")
+    assert window._workspace.canvas.workflow_scene.create_connection(source.node_id, target.node_id)
     csv_path = tmp_path / "preview-domain.csv"
     csv_path.write_text("value,label,city\n1,A,Ankara\n2,B,Izmir\n", encoding="utf-8")
     window._handle_file_selected(str(csv_path))

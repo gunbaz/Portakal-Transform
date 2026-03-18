@@ -67,6 +67,7 @@ class DatasetHandle:
     row_count: int
     column_count: int
     cache_path: Path
+    annotations: dict[str, object] = field(default_factory=dict)
 
     @property
     def path(self) -> Path:
@@ -165,6 +166,38 @@ class DomainColumnEdit:
 @dataclass(frozen=True)
 class DomainEditRequest:
     columns: tuple[DomainColumnEdit, ...] = ()
+
+
+@dataclass(frozen=True)
+class DatasetCatalogEntry:
+    dataset_id: str
+    title: str
+    description: str
+    domain: str
+    target: str
+    tags: tuple[str, ...]
+    download_url: str
+    size_text: str
+    row_count: int
+    column_count: int
+    format: str = "csv"
+
+
+@dataclass(frozen=True)
+class PaintDataPoint:
+    x: float
+    y: float
+    label: str
+
+
+@dataclass(frozen=True)
+class PaintDataSnapshot:
+    x_name: str = "x"
+    y_name: str = "y"
+    label_name: str = "class"
+    labels: tuple[str, ...] = ("C1", "C2")
+    points: tuple[PaintDataPoint, ...] = ()
+    source_name: str = "Painted Data"
 
 
 def build_data_domain(dataframe: pl.DataFrame) -> DataDomain:

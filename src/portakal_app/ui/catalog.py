@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from portakal_app.models import CategoryDefinition, PortDefinition, WidgetDefinition
+from portakal_app.ui.screens.color_screen import ColorScreen
 from portakal_app.ui.screens.column_statistics_screen import ColumnStatisticsScreen
 from portakal_app.ui.screens.csv_import_screen import CSVImportScreen
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
 from portakal_app.ui.screens.data_table_screen import DataTableScreen
+from portakal_app.ui.screens.datasets_screen import DatasetsScreen
 from portakal_app.ui.screens.edit_domain_screen import EditDomainScreen
 from portakal_app.ui.screens.file_screen import FileScreen
+from portakal_app.ui.screens.paint_data_screen import PaintDataScreen
 from portakal_app.ui.screens.placeholder_screen import PlaceholderScreen
 from portakal_app.ui.screens.rank_screen import RankScreen
 from portakal_app.ui.screens.save_data_screen import SaveDataScreen
@@ -56,8 +59,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "datasets",
             "data",
             "Datasets",
-            False,
-            _placeholder_factory("Datasets", "Curated datasets browser is planned for a later sprint."),
+            True,
+            DatasetsScreen,
             "Explore packaged datasets.",
             "dataset",
             (),
@@ -78,8 +81,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "paint-data",
             "data",
             "Paint Data",
-            False,
-            _placeholder_factory("Paint Data", "Manual data editing is outside the current delivery scope."),
+            True,
+            PaintDataScreen,
             "Edit data manually.",
             "paint",
             _inputs("Data"),
@@ -122,8 +125,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "color",
             "data",
             "Color",
-            False,
-            _placeholder_factory("Color", "Visual color settings are reserved for the visualization team."),
+            True,
+            ColorScreen,
             "Assign color metadata.",
             "color",
             _inputs("Data"),

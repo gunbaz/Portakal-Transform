@@ -972,6 +972,9 @@ class WorkflowWorkspace(QFrame):
     def all_screens(self) -> list[QWidget]:
         return list(self._screens.values())
 
+    def screen_items(self) -> list[tuple[str, QWidget]]:
+        return list(self._screens.items())
+
     def is_widget_dialog_visible(self, widget_id: str) -> bool:
         dialog = self._dialogs.get(widget_id)
         return bool(dialog and dialog.isVisible())
