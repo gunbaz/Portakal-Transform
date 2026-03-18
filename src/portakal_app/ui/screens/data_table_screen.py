@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from portakal_app.data.models import DatasetHandle
+
 
 TYPE_COLORS = {
     "numeric": "#4db7eb",
@@ -50,7 +52,7 @@ def _describe_dataset(dataset_handle: Any) -> str:
         return "none"
     if isinstance(dataset_handle, str):
         return Path(dataset_handle).name
-    for attr in ("name", "dataset_id", "id"):
+    for attr in ("display_name", "name", "dataset_id", "id"):
         value = getattr(dataset_handle, attr, None)
         if value:
             return str(value)
@@ -398,7 +400,12 @@ class DataTableScreen(QWidget):
 
     def set_dataset(self, dataset_handle: Any) -> None:
         self._dataset_handle = dataset_handle
-        self._dataset_path = Path(dataset_handle) if isinstance(dataset_handle, str) and Path(dataset_handle).exists() else None
+        if isinstance(dataset_handle, DatasetHandle):
+            self._dataset_path = dataset_handle.source.path if dataset_handle.source.path.exists() else None
+        elif isinstance(dataset_handle, str) and Path(dataset_handle).exists():
+            self._dataset_path = Path(dataset_handle)
+        else:
+            self._dataset_path = None
         self._load_dataset()
 
     def help_text(self) -> str:

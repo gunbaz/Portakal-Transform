@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
+from portakal_app.data.models import DatasetHandle
 from portakal_app.models import DataInfoViewModel
 
 
@@ -64,8 +65,11 @@ class DataInfoScreen(QWidget):
         label.setStyleSheet("background: transparent;")
         return label
 
-    def set_dataset(self, dataset_path: str | None) -> None:
-        self._dataset_path = Path(dataset_path) if dataset_path else None
+    def set_dataset(self, dataset_path: DatasetHandle | str | None) -> None:
+        if isinstance(dataset_path, DatasetHandle):
+            self._dataset_path = dataset_path.source.path
+        else:
+            self._dataset_path = Path(dataset_path) if dataset_path else None
         if self._dataset_path is None or not self._dataset_path.exists():
             self._properties_label.setText("No dataset loaded.")
             self._attributes_label.setText("No additional metadata available yet.")

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
+from portakal_app.data.models import DatasetHandle
+
 
 ScreenFactory = Callable[[], object]
 
@@ -11,6 +13,7 @@ ScreenFactory = Callable[[], object]
 class AppState:
     selected_category: str = "data"
     selected_widget: str = "file"
+    current_dataset: DatasetHandle | None = None
     current_dataset_id: str | None = None
     current_dataset_path: str | None = None
     workflow_title: str = "Untitled"
