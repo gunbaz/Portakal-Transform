@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from portakal_app.models import WidgetDefinition
+from portakal_app.data.models import DatasetHandle
 from portakal_app.ui.icons import get_toolbar_icon
 from portakal_app.ui.shell.workflow_canvas import WorkflowCanvas
 
@@ -897,6 +898,7 @@ class WorkflowWorkspace(QFrame):
         self._last_opened_widget_id: str | None = None
         self._dialogs_on_top = False
         self._current_dataset_path: Path | None = None
+        self._current_dataset_handle: DatasetHandle | None = None
 
         self._outer_layout = QVBoxLayout(self)
         self._outer_layout.setContentsMargins(18, 18, 18, 18)
@@ -1000,7 +1002,30 @@ class WorkflowWorkspace(QFrame):
     def set_current_dataset_path(self, path: str | None) -> None:
         self._current_dataset_path = Path(path) if path else None
 
+    def set_current_dataset(self, dataset: DatasetHandle | None) -> None:
+        self._current_dataset_handle = dataset
+        self._current_dataset_path = dataset.source.path if dataset is not None else self._current_dataset_path
+
     def global_data_preview_snapshot(self) -> dict[str, object]:
+        if self._current_dataset_handle is not None:
+            dataset = self._current_dataset_handle
+            headers = list(dataset.dataframe.columns)
+            rows = [
+                ["" if value is None else str(value) for value in row]
+                for row in dataset.dataframe.head(200).rows()
+            ]
+            total_rows = dataset.row_count
+            return {
+                "summary": "\n".join(
+                    [
+                        f"Data: {dataset.source.path.name}: {total_rows} instances, {len(headers)} variables",
+                        f"Showing first {len(rows)} rows in the preview" if total_rows > len(rows) else "Showing all rows in the preview",
+                    ]
+                ),
+                "headers": headers,
+                "rows": rows,
+            }
+
         if self._current_dataset_path is None or not self._current_dataset_path.exists():
             return {"summary": "No workflow dataset loaded.", "headers": [], "rows": []}
 

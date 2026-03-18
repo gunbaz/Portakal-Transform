@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from portakal_app.models import CategoryDefinition, PortDefinition, WidgetDefinition
+from portakal_app.ui.screens.column_statistics_screen import ColumnStatisticsScreen
+from portakal_app.ui.screens.csv_import_screen import CSVImportScreen
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
 from portakal_app.ui.screens.data_table_screen import DataTableScreen
+from portakal_app.ui.screens.edit_domain_screen import EditDomainScreen
 from portakal_app.ui.screens.file_screen import FileScreen
 from portakal_app.ui.screens.placeholder_screen import PlaceholderScreen
+from portakal_app.ui.screens.rank_screen import RankScreen
 from portakal_app.ui.screens.save_data_screen import SaveDataScreen
 
 
@@ -41,8 +45,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "csv-import",
             "data",
             "CSV File Import",
-            False,
-            _placeholder_factory("CSV File Import", "CSV import presets will be added after the core screens are stable."),
+            True,
+            CSVImportScreen,
             "Preset-based import flow.",
             "csv",
             (),
@@ -96,8 +100,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "rank",
             "data",
             "Rank",
-            False,
-            _placeholder_factory("Rank", "Feature ranking belongs to the next analysis phase."),
+            True,
+            RankScreen,
             "Rank features.",
             "rank",
             _inputs("Data"),
@@ -107,8 +111,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "edit-domain",
             "data",
             "Edit Domain",
-            False,
-            _placeholder_factory("Edit Domain", "Domain editing will be added together with transform widgets."),
+            True,
+            EditDomainScreen,
             "Manage column roles.",
             "edit",
             _inputs("Data"),
@@ -129,8 +133,8 @@ def build_widgets() -> list[WidgetDefinition]:
             "column-statistics",
             "data",
             "Column Statistics",
-            False,
-            _placeholder_factory("Column Statistics", "Detailed per-column charts will be added later."),
+            True,
+            ColumnStatisticsScreen,
             "Deep dive into column distributions.",
             "stats",
             _inputs("Data"),

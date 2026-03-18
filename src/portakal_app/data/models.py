@@ -20,6 +20,15 @@ class SourceInfo:
 
 
 @dataclass(frozen=True)
+class CSVImportOptions:
+    delimiter: str = ","
+    has_header: bool = True
+    encoding: str = "auto"
+    skip_rows: int = 0
+    auto_detect_delimiter: bool = False
+
+
+@dataclass(frozen=True)
 class ColumnSchema:
     name: str
     dtype_repr: str
@@ -77,6 +86,11 @@ class PreviewPage:
 class ColumnProfile:
     column_name: str
     logical_type: str
+    role: str
+    null_count: int = 0
+    null_ratio: float = 0.0
+    unique_count_hint: int = 0
+    sample_values: tuple[str, ...] = ()
     summary: str = ""
 
 
@@ -85,8 +99,11 @@ class DatasetSummary:
     row_count: int = 0
     column_count: int = 0
     missing_value_count: int = 0
+    missing_ratio: float = 0.0
+    duplicate_row_count: int = 0
     feature_count: int = 0
     target_count: int = 0
+    dtype_counts: dict[str, int] = field(default_factory=dict)
     column_profiles: tuple[ColumnProfile, ...] = ()
 
 
@@ -94,7 +111,60 @@ class DatasetSummary:
 class AnalysisSuggestion:
     title: str
     body: str
-    severity: str = "info"
+    kind: str = "suggestion"
+    severity: str = "medium"
+
+
+@dataclass(frozen=True)
+class HistogramBin:
+    label: str
+    count: int
+    fraction: float = 0.0
+
+
+@dataclass(frozen=True)
+class ValueFrequency:
+    value: str
+    count: int
+    ratio: float
+
+
+@dataclass(frozen=True)
+class ColumnStatisticsResult:
+    column_name: str
+    logical_type: str
+    role: str
+    row_count: int
+    missing_count: int
+    missing_ratio: float
+    unique_count: int
+    metrics: tuple[tuple[str, str], ...] = ()
+    warning_tags: tuple[str, ...] = ()
+    histogram_bins: tuple[HistogramBin, ...] = ()
+    top_values: tuple[ValueFrequency, ...] = ()
+
+
+@dataclass(frozen=True)
+class RankedFeature:
+    feature_name: str
+    logical_type: str
+    score: float
+    method: str
+    details: str
+    target_name: str | None = None
+
+
+@dataclass(frozen=True)
+class DomainColumnEdit:
+    original_name: str
+    new_name: str
+    logical_type: str
+    role: str
+
+
+@dataclass(frozen=True)
+class DomainEditRequest:
+    columns: tuple[DomainColumnEdit, ...] = ()
 
 
 def build_data_domain(dataframe: pl.DataFrame) -> DataDomain:

@@ -10,6 +10,7 @@ from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QFrame,
     QFileDialog,
@@ -29,14 +30,27 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.errors import PortakalDataError
 from portakal_app.data.models import DatasetHandle
+from portakal_app.data.services.data_info_service import DataInfoService
 from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.data.services.llm_analyzer import LLMAnalyzer
+from portakal_app.data.services.llm_context_builder import LLMContextBuilder
+from portakal_app.data.services.profiling_service import ProfilingService
 from portakal_app.data.services.preview_service import PreviewService
 from portakal_app.data.services.save_data_service import SaveDataService
-from portakal_app.models import AppState, DataInfoViewModel, MetricCardData, SuggestionItem, WidgetDefinition
+from portakal_app.models import (
+    AppState,
+    LLMSessionConfig,
+    LLM_PROVIDER_OPTIONS,
+    WidgetDefinition,
+)
 from portakal_app.ui.catalog import build_categories, build_widgets
+from portakal_app.ui.screens.column_statistics_screen import ColumnStatisticsScreen
+from portakal_app.ui.screens.csv_import_screen import CSVImportScreen
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
 from portakal_app.ui.screens.data_table_screen import DataTableScreen
+from portakal_app.ui.screens.edit_domain_screen import EditDomainScreen
 from portakal_app.ui.screens.file_screen import FileScreen
+from portakal_app.ui.screens.rank_screen import RankScreen
 from portakal_app.ui.screens.save_data_screen import SaveDataScreen
 from portakal_app.ui.shell.sidebar import SidebarCategoryList
 from portakal_app.ui.shell.state_store import AppStateStore
@@ -132,6 +146,135 @@ class WorkflowInfoDialog(QDialog):
         super().mouseReleaseEvent(event)
 
 
+class LLMSettingsDialog(QDialog):
+    def __init__(self, config: LLMSessionConfig, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setWindowTitle("LLM Settings")
+        self.setModal(True)
+        self.resize(720, 520)
+        self.setObjectName("widgetPopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._initializing = True
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(18, 18, 18, 18)
+        outer_layout.setSpacing(0)
+
+        self._surface = QFrame(self)
+        self._surface.setObjectName("widgetPopupSurface")
+        outer_layout.addWidget(self._surface)
+
+        layout = QVBoxLayout(self._surface)
+        layout.setContentsMargins(24, 24, 24, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Global LLM Settings")
+        title.setProperty("sectionTitle", True)
+        layout.addWidget(title)
+
+        note = QLabel("API keys entered here are kept in memory for this app session only.")
+        note.setProperty("muted", True)
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        provider_header = QLabel("Provider")
+        provider_header.setProperty("sectionTitle", True)
+        layout.addWidget(provider_header)
+
+        self.provider_combo = QComboBox(self)
+        self.provider_combo.addItems(list(LLM_PROVIDER_OPTIONS))
+        layout.addWidget(self.provider_combo)
+
+        model_header = QLabel("Model")
+        model_header.setProperty("sectionTitle", True)
+        layout.addWidget(model_header)
+
+        self.model_input = QLineEdit(self)
+        layout.addWidget(self.model_input)
+
+        base_url_header = QLabel("Base URL")
+        base_url_header.setProperty("sectionTitle", True)
+        layout.addWidget(base_url_header)
+
+        self.base_url_input = QLineEdit(self)
+        layout.addWidget(self.base_url_input)
+
+        api_key_header = QLabel("API Key")
+        api_key_header.setProperty("sectionTitle", True)
+        layout.addWidget(api_key_header)
+
+        self.api_key_input = QLineEdit(self)
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        layout.addWidget(self.api_key_input)
+
+        self.env_status_label = QLabel("")
+        self.env_status_label.setProperty("muted", True)
+        self.env_status_label.setWordWrap(True)
+        layout.addWidget(self.env_status_label)
+
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setProperty("secondary", True)
+        self.cancel_button.clicked.connect(self.reject)
+        footer.addWidget(self.cancel_button)
+
+        self.save_button = QPushButton("Save")
+        self.save_button.setProperty("primary", True)
+        self.save_button.clicked.connect(self.accept)
+        footer.addWidget(self.save_button)
+        layout.addLayout(footer)
+
+        self.provider_combo.currentTextChanged.connect(self._handle_provider_changed)
+
+        self.provider_combo.setCurrentText(config.provider)
+        self.model_input.setText(config.model)
+        self.base_url_input.setText(config.base_url or config.default_base_url())
+        self.api_key_input.setText(config.api_key)
+
+        self._initializing = False
+        self._refresh_fields(reset_model=False, reset_base=False)
+
+    def _handle_provider_changed(self, _provider: str) -> None:
+        self._refresh_fields(reset_model=not self._initializing, reset_base=not self._initializing)
+
+    def _refresh_fields(self, *, reset_model: bool, reset_base: bool) -> None:
+        config = LLMSessionConfig(provider=self.provider_combo.currentText())
+        self.model_input.setPlaceholderText(config.model_placeholder())
+        if reset_base or not self.base_url_input.text().strip():
+            self.base_url_input.setText(config.default_base_url())
+        if reset_model:
+            self.model_input.clear()
+
+        if config.provider == "Ollama":
+            self.api_key_input.clear()
+            self.api_key_input.setEnabled(False)
+            self.api_key_input.setPlaceholderText("Not required for Ollama")
+            self.env_status_label.setText("Ollama does not require an API key.")
+            return
+
+        self.api_key_input.setEnabled(True)
+        self.api_key_input.setPlaceholderText("Leave blank to use environment variable")
+        env_names = ", ".join(config.env_var_names())
+        detected_name = config.env_key_name()
+        if detected_name is not None:
+            self.env_status_label.setText(f"Environment key detected: {detected_name}")
+        else:
+            self.env_status_label.setText(f"No environment key detected. Expected: {env_names}")
+
+    def session_config(self) -> LLMSessionConfig:
+        provider = self.provider_combo.currentText()
+        config = LLMSessionConfig(provider=provider)
+        api_key = "" if provider == "Ollama" else self.api_key_input.text()
+        return LLMSessionConfig(
+            provider=provider,
+            model=self.model_input.text().strip(),
+            base_url=self.base_url_input.text().strip() or config.default_base_url(),
+            api_key=api_key,
+        )
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -164,6 +307,11 @@ class MainWindow(QMainWindow):
         self._saved_snapshot: dict[str, object] | None = None
         self._history_guard = False
         self._file_import_service = FileImportService()
+        self._profiling_service = ProfilingService()
+        self._data_info_service = DataInfoService(self._profiling_service)
+        self._llm_context_builder = LLMContextBuilder()
+        self._llm_analyzer = LLMAnalyzer()
+        self._llm_session_config = LLMSessionConfig()
         self._preview_service = PreviewService()
         self._save_data_service = SaveDataService()
 
@@ -377,10 +525,24 @@ class MainWindow(QMainWindow):
                 screen.on_open_file_requested(self._handle_file_selected)
                 screen.on_reload_requested(self._handle_file_selected)
                 screen.on_apply_requested(self._handle_file_selected)
+            if isinstance(screen, CSVImportScreen):
+                screen.on_import_requested(self._handle_imported_dataset)
+                screen.set_dataset(None)
             if isinstance(screen, DataInfoScreen):
-                self._prime_data_info_screen(screen)
+                screen.set_data_info_service(self._data_info_service)
+                screen.set_llm_context_builder(self._llm_context_builder)
+                screen.set_llm_analyzer(self._llm_analyzer)
+                screen.set_llm_session_config(self._llm_session_config)
+                screen.set_dataset(None)
             if isinstance(screen, DataTableScreen):
                 screen.set_preview_service(self._preview_service)
+                screen.set_dataset(None)
+            if isinstance(screen, EditDomainScreen):
+                screen.on_apply_requested(self._handle_transformed_dataset)
+                screen.set_dataset(None)
+            if isinstance(screen, ColumnStatisticsScreen):
+                screen.set_dataset(None)
+            if isinstance(screen, RankScreen):
                 screen.set_dataset(None)
             if isinstance(screen, SaveDataScreen):
                 screen.set_save_data_service(self._save_data_service)
@@ -390,26 +552,6 @@ class MainWindow(QMainWindow):
         scene = self._workspace.canvas.workflow_scene
         scene.workflowChanged.connect(self._handle_workflow_changed)
         scene.selectionChanged.connect(self._update_action_states)
-
-    def _prime_data_info_screen(self, screen: DataInfoScreen) -> None:
-        demo_view_model = DataInfoViewModel(
-            summary_cards=[
-                MetricCardData("Rows", "0", "Loaded by the data team"),
-                MetricCardData("Columns", "0", "Schema pending"),
-                MetricCardData("Missing", "0%", "Profile service not connected"),
-            ],
-            column_highlights=["No dataset connected yet."],
-            suggestions=[
-                SuggestionItem(
-                    "LLM placeholder",
-                    "Once the analyzer is connected, this list will hold short recommendations and data quality risks.",
-                    "info",
-                )
-            ],
-            llm_status="LLM optional: fallback summary mode",
-        )
-        screen.set_view_model(demo_view_model)
-        screen.set_dataset(None)
 
     def _on_category_selected(self, category_id: str) -> None:
         category = next((item for item in self._categories if item.id == category_id), None)
@@ -442,6 +584,12 @@ class MainWindow(QMainWindow):
             self._state_store.update(status_message=f"Could not load dataset: {Path(path).name}")
             return
         self._apply_dataset(dataset, status_message=f"Selected dataset: {dataset.source.path.name}")
+
+    def _handle_imported_dataset(self, dataset: DatasetHandle) -> None:
+        self._apply_dataset(dataset, status_message=f"Imported dataset: {dataset.source.path.name}")
+
+    def _handle_transformed_dataset(self, dataset: DatasetHandle) -> None:
+        self._apply_dataset(dataset, status_message=f"Updated dataset: {dataset.source.path.name}")
 
     def _on_state_changed(self, state: AppState) -> None:
         self._status_bar.set_message(state.status_message)
@@ -500,13 +648,22 @@ class MainWindow(QMainWindow):
             current_dataset_path=dataset_path,
             status_message=status_message,
         )
+        self._workspace.set_current_dataset(dataset)
         self._workspace.set_current_dataset_path(dataset_path)
         for widget in self._workspace.all_screens():
             if isinstance(widget, FileScreen):
                 widget.set_selected_file(dataset or dataset_path)
+            if isinstance(widget, CSVImportScreen):
+                widget.set_dataset(dataset)
             if isinstance(widget, DataInfoScreen):
                 widget.set_dataset(dataset or dataset_path)
             if isinstance(widget, DataTableScreen):
+                widget.set_dataset(dataset or dataset_path)
+            if isinstance(widget, EditDomainScreen):
+                widget.set_dataset(dataset or dataset_path)
+            if isinstance(widget, ColumnStatisticsScreen):
+                widget.set_dataset(dataset or dataset_path)
+            if isinstance(widget, RankScreen):
                 widget.set_dataset(dataset or dataset_path)
             if isinstance(widget, SaveDataScreen):
                 widget.set_dataset(dataset)
@@ -819,15 +976,13 @@ class MainWindow(QMainWindow):
         self._state_store.update(status_message="Widgets pinned on top." if checked else "Widget pinning disabled.")
 
     def _show_settings_dialog(self) -> None:
-        summary = "\n".join(
-            [
-                f"Tool dock expanded: {'Yes' if self._tool_dock_expanded else 'No'}",
-                f"Workflow margins: {'Yes' if self._workspace.margins_visible() else 'No'}",
-                f"Widgets on top: {'Yes' if self._workspace.dialogs_on_top() else 'No'}",
-                f"Frozen workflow: {'Yes' if self._workflow_frozen else 'No'}",
-            ]
-        )
-        QMessageBox.information(self, "Settings", summary)
+        dialog = LLMSettingsDialog(self._llm_session_config, self)
+        self._center_dialog(dialog)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._llm_session_config = dialog.session_config()
+        self._apply_llm_config_to_screens()
+        self._state_store.update(status_message=f"LLM settings updated: {self._llm_session_config.provider}")
 
     def _reset_widget_settings(self) -> None:
         self._workspace.reset_widget_settings()
@@ -888,6 +1043,11 @@ class MainWindow(QMainWindow):
         self._workspace.canvas.set_frozen(frozen)
         self._catalog.setEnabled(not frozen)
         self._update_action_states()
+
+    def _apply_llm_config_to_screens(self) -> None:
+        for widget in self._workspace.all_screens():
+            if isinstance(widget, DataInfoScreen):
+                widget.set_llm_session_config(self._llm_session_config)
 
     def _push_recent_workflow(self, path: str) -> None:
         normalized = str(Path(path))

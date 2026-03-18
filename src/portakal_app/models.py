@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
-from portakal_app.data.models import DatasetHandle
+from portakal_app.data.models import AnalysisSuggestion, ColumnProfile, DatasetHandle
 
 
 ScreenFactory = Callable[[], object]
+
+LLM_PROVIDER_OPTIONS = ("OpenAI", "Gemini", "Claude", "Qwen", "Ollama")
+LLM_PROVIDER_DEFAULT_BASE_URLS = {
+    "OpenAI": "https://api.openai.com/v1",
+    "Gemini": "https://generativelanguage.googleapis.com/v1beta",
+    "Claude": "https://api.anthropic.com",
+    "Qwen": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "Ollama": "http://localhost:11434",
+}
+LLM_PROVIDER_MODEL_PLACEHOLDERS = {
+    "OpenAI": "gpt-4.1-mini",
+    "Gemini": "gemini-2.5-flash",
+    "Claude": "claude-3-5-sonnet-latest",
+    "Qwen": "qwen3.5-flash",
+    "Ollama": "llama3.1",
+}
+LLM_PROVIDER_ENV_VARS = {
+    "OpenAI": ("OPENAI_API_KEY",),
+    "Gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "Claude": ("ANTHROPIC_API_KEY",),
+    "Qwen": ("DASHSCOPE_API_KEY",),
+    "Ollama": (),
+}
 
 
 @dataclass(frozen=True)
@@ -22,6 +46,46 @@ class AppState:
 
     def with_updates(self, **changes: Any) -> "AppState":
         return replace(self, **changes)
+
+
+@dataclass(frozen=True)
+class LLMSessionConfig:
+    provider: str = "OpenAI"
+    model: str = ""
+    base_url: str = LLM_PROVIDER_DEFAULT_BASE_URLS["OpenAI"]
+    api_key: str = ""
+
+    def with_updates(self, **changes: Any) -> "LLMSessionConfig":
+        return replace(self, **changes)
+
+    def default_base_url(self) -> str:
+        return LLM_PROVIDER_DEFAULT_BASE_URLS.get(self.provider, "")
+
+    def model_placeholder(self) -> str:
+        return LLM_PROVIDER_MODEL_PLACEHOLDERS.get(self.provider, "")
+
+    def env_var_names(self) -> tuple[str, ...]:
+        return LLM_PROVIDER_ENV_VARS.get(self.provider, ())
+
+    def env_key_name(self) -> str | None:
+        for name in self.env_var_names():
+            if os.getenv(name):
+                return name
+        return None
+
+    def env_key_available(self) -> bool:
+        return self.env_key_name() is not None
+
+    def resolved_api_key(self) -> str | None:
+        if self.provider == "Ollama":
+            return None
+        if self.api_key.strip():
+            return self.api_key.strip()
+        env_name = self.env_key_name()
+        if env_name is None:
+            return None
+        value = os.getenv(env_name)
+        return value.strip() if value else None
 
 
 @dataclass(frozen=True)
@@ -67,6 +131,9 @@ class SuggestionItem:
 @dataclass(frozen=True)
 class DataInfoViewModel:
     summary_cards: list[MetricCardData] = field(default_factory=list)
-    column_highlights: list[str] = field(default_factory=list)
-    suggestions: list[SuggestionItem] = field(default_factory=list)
-    llm_status: str = "LLM not connected"
+    column_profiles: list[ColumnProfile] = field(default_factory=list)
+    risks: list[AnalysisSuggestion] = field(default_factory=list)
+    suggestions: list[AnalysisSuggestion] = field(default_factory=list)
+    llm_status: str = "Not analyzed yet"
+    llm_error: str = ""
+    is_analyzing: bool = False

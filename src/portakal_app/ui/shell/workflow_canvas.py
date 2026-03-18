@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, QSize, QSizeF, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPainterPathStroker, QPen, QTextCursor
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPainterPathStroker, QPen, QTextCursor, QTransform
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsItem,
@@ -381,7 +381,10 @@ class WorkflowNodeItem(QGraphicsObject):
     WIDTH = 108.0
     HEIGHT = 58.0
     PORT_RADIUS = 5.0
-    PORT_HIT_RADIUS = 32.0
+    PORT_HIT_RADIUS = 12.0
+    PORT_EVENT_MARGIN = 16.0
+    PORT_EDGE_OFFSET = 1.0
+    DELETE_BUTTON_SIZE = 18.0
 
     def __init__(self, widget_definition: WidgetDefinition, node_id: str | None = None, label: str | None = None) -> None:
         super().__init__()
@@ -391,6 +394,7 @@ class WorkflowNodeItem(QGraphicsObject):
         self._icon: QIcon | None = get_widget_icon(widget_definition.icon_name)
         self._edges: list[WorkflowEdgeItem] = []
         self._active_port_drag: WorkflowPortRef | None = None
+        self._delete_hovered = False
         self.setFlags(
             QGraphicsObject.GraphicsItemFlag.ItemIsMovable
             | QGraphicsObject.GraphicsItemFlag.ItemIsSelectable
@@ -400,7 +404,17 @@ class WorkflowNodeItem(QGraphicsObject):
         self.setZValue(1)
 
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self.WIDTH, self.HEIGHT)
+        return self._body_rect().adjusted(-self.PORT_EVENT_MARGIN, 0.0, self.PORT_EVENT_MARGIN, 0.0)
+
+    def shape(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addRoundedRect(self._body_rect(), 28, 28)
+        for direction, ports in (("input", self.widget_definition.input_ports), ("output", self.widget_definition.output_ports)):
+            for index, _port in enumerate(ports):
+                path.addEllipse(self._port_center(direction, index, len(ports)), self.PORT_HIT_RADIUS, self.PORT_HIT_RADIUS)
+        if self.isSelected():
+            path.addEllipse(self._delete_button_rect())
+        return path
 
     def add_edge(self, edge: WorkflowEdgeItem) -> None:
         self._edges.append(edge)
@@ -414,7 +428,10 @@ class WorkflowNodeItem(QGraphicsObject):
         self.update()
 
     def center_anchor(self) -> QPointF:
-        return self.mapToScene(self.boundingRect().center())
+        return self.mapToScene(self._body_rect().center())
+
+    def _body_rect(self) -> QRectF:
+        return QRectF(0, 0, self.WIDTH, self.HEIGHT)
 
     def _ports(self, direction: str) -> tuple[PortDefinition, ...]:
         return self.widget_definition.input_ports if direction == "input" else self.widget_definition.output_ports
@@ -432,8 +449,12 @@ class WorkflowNodeItem(QGraphicsObject):
     def _port_center(self, direction: str, index: int, count: int) -> QPointF:
         spacing = self.HEIGHT / (count + 1)
         y = spacing * (index + 1)
-        x = 0.0 if direction == "input" else self.WIDTH
+        x = -self.PORT_EDGE_OFFSET if direction == "input" else self.WIDTH + self.PORT_EDGE_OFFSET
         return QPointF(x, y)
+
+    def _delete_button_rect(self) -> QRectF:
+        size = self.DELETE_BUTTON_SIZE
+        return QRectF(self.WIDTH - size - 6.0, 6.0, size, size)
 
     def _hit_test_port(self, position: QPointF) -> WorkflowPortRef | None:
         for direction, ports in (("input", self.widget_definition.input_ports), ("output", self.widget_definition.output_ports)):
@@ -446,7 +467,7 @@ class WorkflowNodeItem(QGraphicsObject):
         return None
 
     def paint(self, painter: QPainter, _option, _widget: QWidget | None = None) -> None:
-        rect = self.boundingRect()
+        rect = self._body_rect()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         border_color = QColor("#d0d8df") if not self.isSelected() else QColor("#e3a849")
         painter.setBrush(QBrush(QColor("#fffefb")))
@@ -481,7 +502,22 @@ class WorkflowNodeItem(QGraphicsObject):
                 painter.setPen(QPen(QColor("#ffffff"), 2))
                 painter.drawEllipse(center, self.PORT_RADIUS, self.PORT_RADIUS)
 
+        if self.isSelected():
+            delete_rect = self._delete_button_rect()
+            painter.setBrush(QColor("#f0b2a7") if self._delete_hovered else QColor("#f6d7d1"))
+            painter.setPen(QPen(QColor("#c15b4d"), 1.2))
+            painter.drawEllipse(delete_rect)
+            painter.setPen(QPen(QColor("#7a2418"), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(delete_rect.left() + 5.0, delete_rect.top() + 5.0, delete_rect.right() - 5.0, delete_rect.bottom() - 5.0)
+            painter.drawLine(delete_rect.right() - 5.0, delete_rect.top() + 5.0, delete_rect.left() + 5.0, delete_rect.bottom() - 5.0)
+
     def mousePressEvent(self, event) -> None:
+        if self.isSelected() and self._delete_button_rect().contains(event.pos()):
+            scene = self.scene()
+            if isinstance(scene, WorkflowScene):
+                scene.delete_node(self)
+            event.accept()
+            return
         port_ref = self._hit_test_port(event.pos())
         if port_ref is not None:
             self._active_port_drag = port_ref if port_ref.direction == "output" else None
@@ -489,6 +525,19 @@ class WorkflowNodeItem(QGraphicsObject):
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def hoverMoveEvent(self, event) -> None:
+        hovered = self.isSelected() and self._delete_button_rect().contains(event.pos())
+        if hovered != self._delete_hovered:
+            self._delete_hovered = hovered
+            self.update(self._delete_button_rect())
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:
+        if self._delete_hovered:
+            self._delete_hovered = False
+            self.update(self._delete_button_rect())
+        super().hoverLeaveEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
         if self._active_port_drag is not None and self._active_port_drag.direction == "output":
@@ -977,6 +1026,19 @@ class WorkflowScene(QGraphicsScene):
         self.statusMessage.emit("Nothing selected to delete.")
         return False
 
+    def delete_node(self, node: WorkflowNodeItem) -> bool:
+        if node.node_id not in self._nodes:
+            return False
+        removed_edges = self._remove_node(node)
+        parts = ["1 node"]
+        if removed_edges:
+            parts.append(f"{removed_edges} connection")
+            if removed_edges != 1:
+                parts[-1] += "s"
+        self.statusMessage.emit(f"Deleted {' and '.join(parts)}.")
+        self._notify_workflow_changed()
+        return True
+
     def _remove_node(self, node: WorkflowNodeItem) -> int:
         removed_edges = 0
         for edge in list(node._edges):
@@ -1011,6 +1073,17 @@ class WorkflowScene(QGraphicsScene):
         if self._pending_output is not None:
             self.drag_connection_to(event.scenePos())
         super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            transform = self.views()[0].transform() if self.views() else QTransform()
+            item = self.itemAt(event.scenePos(), transform)
+            if isinstance(item, WorkflowNodeItem) and item.isSelected():
+                if item._delete_button_rect().contains(item.mapFromScene(event.scenePos())):
+                    self.delete_node(item)
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
         if self._pending_output is not None:
@@ -1121,6 +1194,22 @@ class WorkflowCanvas(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
+        painter.fillRect(rect, QColor("#f8f8f6"))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        spacing = 34
+        dot_color = QColor("#ddd9d1")
+        left = int(rect.left()) - (int(rect.left()) % spacing) - spacing
+        top = int(rect.top()) - (int(rect.top()) % spacing) - spacing
+        right = int(rect.right()) + spacing
+        bottom = int(rect.bottom()) + spacing
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        for x in range(left, right + spacing, spacing):
+            for y in range(top, bottom + spacing, spacing):
+                painter.setBrush(dot_color)
+                painter.drawEllipse(QPointF(float(x), float(y)), 1.35, 1.35)
 
     @property
     def workflow_scene(self) -> WorkflowScene:
@@ -1275,6 +1364,18 @@ class WorkflowCanvas(QGraphicsView):
             return
         super().wheelEvent(event)
 
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and not self._frozen:
+            scene_pos = self.mapToScene(event.position().toPoint())
+            for node in list(self._scene._nodes.values()):
+                if not node.isSelected():
+                    continue
+                if node._delete_button_rect().contains(node.mapFromScene(scene_pos)):
+                    self._scene.delete_node(node)
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
     def dragEnterEvent(self, event) -> None:
         if self._frozen:
             event.ignore()
@@ -1318,10 +1419,10 @@ class WorkflowCanvas(QGraphicsView):
         ):
             super().keyPressEvent(event)
             return
-        if self._frozen and event.key() == Qt.Key.Key_Backspace:
+        if self._frozen and event.key() in {Qt.Key.Key_Backspace, Qt.Key.Key_Delete}:
             event.accept()
             return
-        if event.key() == Qt.Key.Key_Backspace:
+        if event.key() in {Qt.Key.Key_Backspace, Qt.Key.Key_Delete}:
             if self._scene.delete_selected_items():
                 event.accept()
                 return

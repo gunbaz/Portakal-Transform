@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -9,15 +10,21 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QCloseEvent, QFocusEvent, QKeyEvent
+from PySide6.QtGui import QCloseEvent, QFocusEvent, QImage, QKeyEvent, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMenu, QMessageBox, QPushButton, QScrollArea, QWidget
 
 from portakal_app.app import create_application
-from portakal_app.ui.main_window import MainWindow, WorkflowInfoDialog
+from portakal_app.data.models import AnalysisSuggestion
+from portakal_app.models import LLMSessionConfig
+from portakal_app.ui.main_window import LLMSettingsDialog, MainWindow, WorkflowInfoDialog
+from portakal_app.ui.screens.column_statistics_screen import ColumnStatisticsScreen
+from portakal_app.ui.screens.csv_import_screen import CSVImportScreen
 from portakal_app.ui.screens.data_info_screen import DataInfoScreen
 from portakal_app.ui.screens.data_table_screen import DataTableScreen
+from portakal_app.ui.screens.edit_domain_screen import EditDomainScreen
 from portakal_app.ui.screens.file_screen import FileScreen
+from portakal_app.ui.screens.rank_screen import RankScreen
 from portakal_app.ui.screens.save_data_screen import SaveDataScreen
 from portakal_app.ui.shell.widget_catalog import WidgetCatalogButton, WidgetCatalogPanel
 from portakal_app.ui.shell.workflow_workspace import WidgetDataPreviewDialog, WidgetSelectedDataDialog
@@ -429,9 +436,218 @@ def test_data_info_screen_loads_dataset_properties(app, tmp_path):
         encoding="utf-8",
     )
     screen.set_dataset(str(csv_path))
-    assert "Name: iris" in screen._properties_label.text()
-    assert "Size: ~2 rows, 5 columns" in screen._properties_label.text()
-    assert str(csv_path) in screen._attributes_label.text()
+    assert screen._dataset_label.text() == "Dataset: iris.csv"
+    assert screen._column_profiles_table.rowCount() == 5
+    assert screen._llm_status.text() == "Not analyzed yet"
+    assert screen._risk_list.item(0).text() == "No AI risks yet."
+
+
+def test_csv_import_screen_imports_semicolon_file_without_header(app, tmp_path):
+    screen = CSVImportScreen()
+    csv_path = tmp_path / "raw.txt"
+    csv_path.write_text("1;2;yes\n3;4;no\n", encoding="utf-8")
+    captured = {}
+    screen.on_import_requested(lambda dataset: captured.setdefault("dataset", dataset))
+
+    screen._path_input.setText(str(csv_path))
+    screen._delimiter_combo.setCurrentText("Semicolon (;)")
+    screen._has_header_checkbox.setChecked(False)
+    screen._apply_button.click()
+
+    dataset = captured["dataset"]
+    assert dataset.row_count == 2
+    assert dataset.dataframe.columns == ["Column 1", "Column 2", "Column 3"]
+    assert screen._preview_table.rowCount() == 2
+    assert "Delimiter: Semicolon (;)" in screen._settings_label.text()
+
+
+def test_csv_import_screen_auto_detects_delimiter_and_skip_rows(app, tmp_path):
+    screen = CSVImportScreen()
+    csv_path = tmp_path / "auto.txt"
+    csv_path.write_text("# comment\ncity;value\nAnkara;1\nIzmir;2\n", encoding="utf-8")
+
+    screen._path_input.setText(str(csv_path))
+    screen._delimiter_combo.setCurrentText("Auto")
+    screen._skip_rows_spin.setValue(1)
+    screen._reload_button.click()
+
+    assert "Delimiter: Semicolon (;)" in screen._settings_label.text()
+    assert screen._preview_table.horizontalHeaderItem(0).text() == "city"
+    assert screen._preview_table.rowCount() == 2
+
+
+def test_csv_import_screen_reads_cp1254_with_auto_encoding(app, tmp_path):
+    screen = CSVImportScreen()
+    csv_path = tmp_path / "tr.csv"
+    csv_path.write_bytes("şehir;değer\nİzmir;10\n".encode("cp1254"))
+
+    screen._path_input.setText(str(csv_path))
+    screen._delimiter_combo.setCurrentText("Auto")
+    screen._encoding_combo.setCurrentText("Auto")
+    screen._reload_button.click()
+
+    assert screen._preview_table.horizontalHeaderItem(0).text() == "şehir"
+    assert screen._preview_table.item(0, 0).text() == "İzmir"
+
+
+def test_edit_domain_screen_applies_renames_and_roles(app, tmp_path):
+    screen = EditDomainScreen()
+    csv_path = tmp_path / "domain.csv"
+    csv_path.write_text("value,label\n1,A\n2,B\n", encoding="utf-8")
+    captured = {}
+    screen.on_apply_requested(lambda dataset: captured.setdefault("dataset", dataset))
+    screen.set_dataset(str(csv_path))
+
+    screen._columns_table.item(0, 0).setText("amount")
+    role_widget = screen._columns_table.cellWidget(1, 2)
+    role_widget.setCurrentText("meta")
+    screen._apply_button.click()
+
+    dataset = captured["dataset"]
+    assert dataset.dataframe.columns == ["amount", "label"]
+    roles = {column.name: column.role for column in dataset.domain.columns}
+    assert roles["amount"] == "feature"
+    assert roles["label"] == "meta"
+
+
+def test_edit_domain_screen_enforces_single_target_and_restore_inferred(app, tmp_path):
+    screen = EditDomainScreen()
+    csv_path = tmp_path / "domain-restore.csv"
+    csv_path.write_text("value,label,target2\n1,A,K1\n2,B,K2\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+
+    first_role = screen._columns_table.cellWidget(0, 2)
+    third_role = screen._columns_table.cellWidget(2, 2)
+    first_role.setCurrentText("target")
+    third_role.setCurrentText("target")
+
+    assert first_role.currentText() == "feature"
+    assert third_role.currentText() == "target"
+
+    screen._columns_table.item(0, 0).setText("amount")
+    screen._restore_inferred_button.click()
+
+    assert screen._columns_table.item(0, 0).text() == "value"
+    assert "Restored inferred domain" in screen._change_summary_label.text()
+
+
+def test_edit_domain_screen_skip_drops_column(app, tmp_path):
+    screen = EditDomainScreen()
+    csv_path = tmp_path / "domain-skip.csv"
+    csv_path.write_text("value,label,city\n1,A,Ankara\n2,B,Izmir\n", encoding="utf-8")
+    captured = {}
+    screen.on_apply_requested(lambda dataset: captured.setdefault("dataset", dataset))
+    screen.set_dataset(str(csv_path))
+
+    role_widget = screen._columns_table.cellWidget(2, 2)
+    role_widget.setCurrentText("skip")
+    screen._apply_button.click()
+
+    assert captured["dataset"].dataframe.columns == ["value", "label"]
+    assert "Dropped 1 skipped column" in screen._change_summary_label.text()
+
+
+def test_column_statistics_screen_shows_numeric_metrics(app, tmp_path):
+    screen = ColumnStatisticsScreen()
+    csv_path = tmp_path / "stats.csv"
+    csv_path.write_text("value,label\n1,A\n3,A\n5,B\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+    screen._column_combo.setCurrentText("value")
+
+    metrics = {screen._stats_table.item(row, 0).text(): screen._stats_table.item(row, 1).text() for row in range(screen._stats_table.rowCount())}
+    assert metrics["Type"] == "numeric"
+    assert metrics["Mean"] == "3.0000"
+    assert screen._top_values_table.rowCount() >= 3
+    assert screen._histogram_widget is not None
+
+
+def test_column_statistics_screen_filters_columns_and_shows_warning_badges(app, tmp_path):
+    screen = ColumnStatisticsScreen()
+    csv_path = tmp_path / "stats-filter.csv"
+    csv_path.write_text("city,id_text\n" + "\n".join([f"A,id-{index}" for index in range(19)]) + "\nB,id-19\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+    screen._search_input.setText("id")
+
+    assert screen._column_combo.count() == 1
+    assert screen._column_combo.currentText() == "id_text"
+    badge_texts = [screen._warning_badges_layout.itemAt(index).widget().text() for index in range(screen._warning_badges_layout.count() - 1)]
+    assert "high cardinality" in badge_texts
+
+
+def test_rank_screen_orders_signal_feature_first(app, tmp_path):
+    screen = RankScreen()
+    csv_path = tmp_path / "rank.csv"
+    csv_path.write_text("signal,noise,target\n0,5,A\n0,1,A\n1,3,B\n1,4,B\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+
+    assert screen._rank_table.rowCount() >= 2
+    assert screen._rank_table.item(0, 0).text() == "signal"
+    first_score = float(screen._rank_table.item(0, 2).text())
+    second_score = float(screen._rank_table.item(1, 2).text())
+    assert first_score >= second_score
+
+
+def test_rank_screen_supports_target_override_filter_and_top_n(app, tmp_path):
+    screen = RankScreen()
+    csv_path = tmp_path / "rank-controls.csv"
+    csv_path.write_text("signal,noise,city,target\n0,5,A,A\n0,1,A,A\n1,3,B,B\n1,4,B,B\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+    screen._feature_filter_combo.setCurrentText("Numeric only")
+    screen._top_n_spin.setValue(1)
+    screen._target_combo.setCurrentText("target")
+
+    assert screen._rank_table.rowCount() == 1
+    assert screen._rank_table.item(0, 0).text() == "signal"
+    assert "target 'target'" in screen._summary_label.text()
+
+    screen._target_combo.setCurrentText("None (Heuristic)")
+    assert "heuristic mode" in screen._summary_label.text().lower()
+
+
+def test_edit_domain_apply_updates_main_window_dataset(app, tmp_path):
+    window = MainWindow()
+    csv_path = tmp_path / "window-domain.csv"
+    csv_path.write_text("value,label\n1,A\n2,B\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    screen = next(widget for widget in window._workspace.all_screens() if isinstance(widget, EditDomainScreen))
+    screen._columns_table.item(0, 0).setText("amount")
+    screen._apply_button.click()
+
+    assert window.state.current_dataset is not None
+    assert window.state.current_dataset.dataframe.columns[0] == "amount"
+
+
+def test_csv_import_apply_updates_main_window_dataset_and_data_info(app, tmp_path):
+    window = MainWindow()
+    screen = next(widget for widget in window._workspace.all_screens() if isinstance(widget, CSVImportScreen))
+    csv_path = tmp_path / "window-import.txt"
+    csv_path.write_text("# comment\ncity;value\nAnkara;1\nIzmir;2\n", encoding="utf-8")
+
+    screen._path_input.setText(str(csv_path))
+    screen._delimiter_combo.setCurrentText("Auto")
+    screen._skip_rows_spin.setValue(1)
+    screen._apply_button.click()
+
+    assert window.state.current_dataset is not None
+    assert window.state.current_dataset.row_count == 2
+    data_info = next(widget for widget in window._workspace.all_screens() if isinstance(widget, DataInfoScreen))
+    assert data_info._dataset_label.text() == "Dataset: window-import.txt"
+
+
+def test_edit_domain_apply_updates_global_preview_snapshot(app, tmp_path):
+    window = MainWindow()
+    csv_path = tmp_path / "preview-domain.csv"
+    csv_path.write_text("value,label,city\n1,A,Ankara\n2,B,Izmir\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    screen = next(widget for widget in window._workspace.all_screens() if isinstance(widget, EditDomainScreen))
+    role_widget = screen._columns_table.cellWidget(2, 2)
+    role_widget.setCurrentText("skip")
+    screen._apply_button.click()
+
+    preview = window._workspace.global_data_preview_snapshot()
+    assert preview["headers"] == ["value", "label"]
 
 
 def test_data_table_screen_shows_full_dataset_and_keeps_total_count(app, tmp_path):
@@ -614,6 +830,97 @@ def test_data_info_help_menu_contains_documentation(app):
     assert texts == ["Widget Help", "Documentation"]
 
 
+def test_llm_settings_dialog_updates_provider_fields(app, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    dialog = LLMSettingsDialog(LLMSessionConfig(provider="OpenAI", model="gpt-test"), None)
+
+    assert "Environment key detected" in dialog.env_status_label.text()
+    assert dialog.base_url_input.text() == "https://api.openai.com/v1"
+
+    dialog.provider_combo.setCurrentText("Ollama")
+
+    assert dialog.api_key_input.isEnabled() is False
+    assert dialog.base_url_input.text() == "http://localhost:11434"
+    assert "does not require an API key" in dialog.env_status_label.text()
+
+
+def test_settings_dialog_updates_global_llm_config_without_serializing_it(app, monkeypatch):
+    window = MainWindow()
+
+    def fake_exec(self):
+        self.provider_combo.setCurrentText("Gemini")
+        self.model_input.setText("gemini-2.5-flash")
+        self.base_url_input.setText("https://generativelanguage.googleapis.com/v1beta")
+        self.api_key_input.setText("gem-key")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(LLMSettingsDialog, "exec", fake_exec)
+
+    window._show_settings_dialog()
+    payload = window._serialize_workflow()
+    payload_text = str(payload)
+
+    assert window._llm_session_config.provider == "Gemini"
+    assert window._llm_session_config.model == "gemini-2.5-flash"
+    assert "gem-key" not in payload_text
+    assert "Gemini" not in payload_text
+
+
+def test_data_info_screen_runs_async_ai_analysis_and_renders_results(app, tmp_path):
+    class SlowAnalyzer:
+        def analyze(self, summary, context, config):
+            time.sleep(0.1)
+            return [
+                AnalysisSuggestion("Leakage", "Potential target leakage detected.", kind="risk", severity="high"),
+                AnalysisSuggestion("Impute", "Review null-heavy fields before training.", kind="suggestion", severity="medium"),
+            ]
+
+    screen = DataInfoScreen()
+    screen.set_llm_analyzer(SlowAnalyzer())  # type: ignore[arg-type]
+    screen.set_llm_session_config(LLMSessionConfig(provider="Ollama", model="llama3.1", base_url="http://localhost:11434"))
+    csv_path = tmp_path / "iris.csv"
+    csv_path.write_text("a,b,target\n1,2,yes\n3,4,no\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+
+    screen._analyze_button.click()
+
+    assert screen._analyze_button.isEnabled() is False
+    for _ in range(40):
+        if screen._analysis_thread is None:
+            break
+        QTest.qWait(50)
+
+    assert screen._analysis_thread is None
+    assert "Analyzed with Ollama" in screen._llm_status.text()
+    assert "Leakage" in screen._risk_list.item(0).text()
+    assert "Impute" in screen._suggestion_list.item(0).text()
+
+
+def test_data_info_screen_shows_ai_error_without_losing_summary(app, tmp_path):
+    class FailingAnalyzer:
+        def analyze(self, summary, context, config):
+            raise RuntimeError("Bad key")
+
+    screen = DataInfoScreen()
+    screen.set_llm_analyzer(FailingAnalyzer())  # type: ignore[arg-type]
+    screen.set_llm_session_config(LLMSessionConfig(provider="Ollama", model="llama3.1", base_url="http://localhost:11434"))
+    csv_path = tmp_path / "iris.csv"
+    csv_path.write_text("a,b,target\n1,2,yes\n3,4,no\n", encoding="utf-8")
+    screen.set_dataset(str(csv_path))
+    summary_card_count = screen._summary_cards_layout.count()
+
+    screen._analyze_button.click()
+    for _ in range(40):
+        if screen._analysis_thread is None:
+            break
+        QTest.qWait(50)
+
+    assert screen._analysis_thread is None
+    assert screen._llm_status.text() == "AI analysis failed"
+    assert screen._llm_error_label.text() == "Bad key"
+    assert screen._summary_cards_layout.count() == summary_card_count
+
+
 def test_widget_popup_close_button_is_clickable(app):
     window = MainWindow()
     window.show()
@@ -729,6 +1036,23 @@ def test_workflow_canvas_accepts_connection_near_port_not_just_exact_dot(app):
     near_point = QPointF(exact_point.x() + 12, exact_point.y() + 6)
     assert canvas.workflow_scene.finish_connection_drag_at(near_point)
     assert canvas.workflow_scene.edge_count() == 1
+
+
+def test_workflow_canvas_can_start_connection_from_visible_port_edge(app):
+    window = MainWindow()
+    window.show()
+    QTest.qWait(50)
+    canvas = window._workspace.canvas
+    file_node = canvas.add_workflow_node("file")
+    node = canvas.workflow_scene._nodes[file_node.node_id]
+    port_scene_pos = node.port_scene_position("output", "out-1") + QPointF(4, 0)
+    viewport_pos = canvas.mapFromScene(port_scene_pos)
+
+    QTest.mousePress(canvas.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, viewport_pos)
+
+    assert canvas.workflow_scene._pending_output is not None
+
+    QTest.mouseRelease(canvas.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, viewport_pos)
 
 
 def test_workflow_canvas_hides_scrollbars_and_supports_keyboard_pan(app):
@@ -946,7 +1270,7 @@ def test_selected_node_deletes_attached_connections(app):
     assert scene.edge_count() == 0
 
 
-def test_backspace_deletes_selected_node_but_delete_does_not(app):
+def test_backspace_and_delete_both_remove_selected_node(app):
     window = MainWindow()
     canvas = window._workspace.canvas
     scene = canvas.workflow_scene
@@ -956,10 +1280,54 @@ def test_backspace_deletes_selected_node_but_delete_does_not(app):
     scene.clearSelection()
     first_node.setSelected(True)
     canvas.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier))
-    assert scene.node_count() == 1
+    assert scene.node_count() == 0
 
+    second = canvas.add_workflow_node("file")
+    second_node = scene._nodes[second.node_id]
+    scene.clearSelection()
+    second_node.setSelected(True)
     canvas.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Backspace, Qt.KeyboardModifier.NoModifier))
     assert scene.node_count() == 0
+
+
+def test_selected_node_can_be_deleted_from_visible_delete_button(app):
+    window = MainWindow()
+    window.show()
+    QTest.qWait(50)
+    canvas = window._workspace.canvas
+    record = canvas.add_workflow_node("file")
+    node = canvas.workflow_scene._nodes[record.node_id]
+    delete_center = node.mapToScene(node._delete_button_rect().center())
+    viewport_pos = canvas.mapFromScene(delete_center)
+
+    QTest.mouseClick(canvas.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, viewport_pos)
+
+    assert canvas.workflow_scene.node_count() == 0
+
+
+def test_workflow_canvas_renders_dotted_background(app):
+    window = MainWindow()
+    window.show()
+    QTest.qWait(50)
+    canvas = window._workspace.canvas
+    canvas.resize(420, 260)
+    image = QImage(canvas.viewport().size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    canvas.render(painter)
+    painter.end()
+
+    base_color = "#f8f8f6"
+    found_non_base = False
+    for x in range(0, image.width(), 4):
+        for y in range(0, image.height(), 4):
+            if image.pixelColor(x, y).name() != base_color:
+                found_non_base = True
+                break
+        if found_non_base:
+            break
+
+    assert found_non_base is True
 
 
 def test_undo_and_redo_restore_workflow_state(app):

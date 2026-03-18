@@ -12,3 +12,15 @@ class DatasetLoadError(PortakalDataError):
 
 class DatasetSaveError(PortakalDataError):
     """Raised when a dataset cannot be exported."""
+
+
+class LLMConfigurationError(PortakalDataError):
+    """Raised when the current LLM configuration is incomplete."""
+
+
+class LLMRequestError(PortakalDataError):
+    """Raised when an LLM request fails."""
+
+
+class LLMResponseError(PortakalDataError):
+    """Raised when an LLM response cannot be parsed."""
