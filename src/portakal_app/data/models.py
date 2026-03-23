@@ -57,7 +57,7 @@ class DataDomain:
         return tuple(column for column in self.columns if column.role == "meta")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class DatasetHandle:
     dataset_id: str
     display_name: str
@@ -68,6 +68,14 @@ class DatasetHandle:
     column_count: int
     cache_path: Path
     annotations: dict[str, object] = field(default_factory=dict)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DatasetHandle):
+            return NotImplemented
+        return self.dataset_id == other.dataset_id
+
+    def __hash__(self) -> int:
+        return hash(self.dataset_id)
 
     @property
     def path(self) -> Path:
