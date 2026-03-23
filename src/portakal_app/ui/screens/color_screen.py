@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.color_settings_service import ColorSettingsService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 class ColorValueButton(QPushButton):
@@ -70,11 +71,13 @@ class GradientPreview(QWidget):
         painter.drawRoundedRect(rect, 9, 9)
 
 
-class ColorScreen(QWidget):
+class ColorScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None, service: ColorSettingsService | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._service = service or ColorSettingsService()
         self._dataset: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._callbacks: list[Callable[[DatasetHandle], None]] = []
         self._state: dict[str, object] = {"discrete": {}, "numeric": {}}
         self._discrete_buttons: dict[tuple[str, str], ColorValueButton] = {}
@@ -183,6 +186,7 @@ class ColorScreen(QWidget):
 
     def set_dataset(self, dataset: DatasetHandle | None) -> None:
         self._dataset = dataset
+        self._output_dataset = None
         self._dataset_label.setText(f"Dataset: {dataset.display_name if dataset is not None else 'none'}")
         self._state = self._service.build_state(dataset)
         self._render_state()
@@ -200,6 +204,31 @@ class ColorScreen(QWidget):
         discrete_count = len(self._state.get("discrete", {})) if isinstance(self._state.get("discrete"), dict) else 0
         numeric_count = len(self._state.get("numeric", {})) if isinstance(self._state.get("numeric"), dict) else 0
         return str(discrete_count + numeric_count)
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
+        if dataset is not None and self._auto_apply_checkbox.isChecked():
+            self._emit_dataset()
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        return {
+            "state": json.loads(json.dumps(self._state)),
+            "auto_apply": self._auto_apply_checkbox.isChecked(),
+            "committed": self._output_dataset is not None,
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        self._auto_apply_checkbox.setChecked(bool(payload.get("auto_apply", True)))
+        state = payload.get("state")
+        if isinstance(state, dict):
+            self._state = state
+            self._render_state()
+        if bool(payload.get("committed")) and self._dataset is not None:
+            self._emit_dataset()
 
     def report_snapshot(self) -> dict[str, object]:
         discrete = self._state.get("discrete", {})
@@ -329,8 +358,10 @@ class ColorScreen(QWidget):
             return
         colored = self._service.apply(self._dataset, self._state)
         self._dataset = colored
+        self._output_dataset = colored
         for callback in self._callbacks:
             callback(colored)
+        self._notify_output_changed()
 
     def _reset_state(self) -> None:
         base_dataset = replace(self._dataset, annotations={}) if self._dataset is not None else None

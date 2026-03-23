@@ -4,6 +4,7 @@ import copy
 import json
 import re
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QUrl
@@ -28,8 +29,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from portakal_app.data.errors import PortakalDataError
-from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.color_settings_service import ColorSettingsService
 from portakal_app.data.services.data_info_service import DataInfoService
 from portakal_app.data.services.dataset_catalog_service import DatasetCatalogService
@@ -44,6 +43,7 @@ from portakal_app.models import (
     AppState,
     LLMSessionConfig,
     LLM_PROVIDER_OPTIONS,
+    WorkflowPayload,
     WidgetDefinition,
 )
 from portakal_app.ui.catalog import build_categories, build_widgets
@@ -64,6 +64,15 @@ from portakal_app.ui.shell.status_bar import StatusBarController
 from portakal_app.ui.shell.widget_catalog import WidgetCatalogPanel
 from portakal_app.ui.shell.workflow_canvas import WorkflowScene
 from portakal_app.ui.shell.workflow_workspace import WorkflowWorkspace
+
+
+@dataclass
+class NodeRuntime:
+    node_id: str
+    widget_id: str
+    screen: QWidget
+    input_payloads: dict[str, WorkflowPayload | None] = field(default_factory=dict)
+    output_payload: WorkflowPayload | None = None
 
 
 class WorkflowInfoDialog(QDialog):
@@ -323,15 +332,17 @@ class MainWindow(QMainWindow):
         self._dataset_catalog_service = DatasetCatalogService()
         self._paint_data_service = PaintDataService()
         self._color_settings_service = ColorSettingsService()
+        self._node_runtimes: dict[str, NodeRuntime] = {}
+        self._runtime_guard = False
 
         self._build_layout()
-        self._register_screens()
         self._build_menu()
         self._connect_scene_signals()
         QApplication.clipboard().dataChanged.connect(self._update_action_states)
 
         self._sidebar.set_current_category(self._state_store.state.selected_category)
         self._on_category_selected(self._state_store.state.selected_category)
+        self._sync_node_runtimes()
         self._reset_history(self._serialize_workflow())
         self._refresh_window_title()
         self._update_action_states()
@@ -526,48 +537,54 @@ class MainWindow(QMainWindow):
         self._workspace.arrowAnnotationRequested.connect(self._add_arrow_annotation)
         layout.addWidget(self._workspace, 1)
 
-    def _register_screens(self) -> None:
-        for widget in self._widgets:
-            screen = widget.screen_factory()
-            self._workspace.register_screen(widget.id, screen)
-            if isinstance(screen, FileScreen):
-                screen.on_open_file_requested(self._handle_file_selected)
-                screen.on_reload_requested(self._handle_file_selected)
-                screen.on_apply_requested(self._handle_file_selected)
-            if isinstance(screen, CSVImportScreen):
-                screen.on_import_requested(self._handle_imported_dataset)
-                screen.set_dataset(None)
-            if isinstance(screen, DatasetsScreen):
-                screen.set_dataset_catalog_service(self._dataset_catalog_service)
-                screen.on_dataset_selected(self._handle_imported_dataset)
-                screen.set_dataset(None)
-            if isinstance(screen, DataInfoScreen):
-                screen.set_data_info_service(self._data_info_service)
-                screen.set_llm_context_builder(self._llm_context_builder)
-                screen.set_llm_analyzer(self._llm_analyzer)
-                screen.set_llm_session_config(self._llm_session_config)
-                screen.set_dataset(None)
-            if isinstance(screen, DataTableScreen):
-                screen.set_preview_service(self._preview_service)
-                screen.set_dataset(None)
-            if isinstance(screen, PaintDataScreen):
-                screen.set_paint_data_service(self._paint_data_service)
-                screen.on_apply_requested(self._handle_imported_dataset)
-                screen.set_dataset(None)
-            if isinstance(screen, EditDomainScreen):
-                screen.on_apply_requested(self._handle_transformed_dataset)
-                screen.set_dataset(None)
-            if isinstance(screen, ColorScreen):
-                screen.set_color_settings_service(self._color_settings_service)
-                screen.on_apply_requested(self._handle_transformed_dataset)
-                screen.set_dataset(None)
-            if isinstance(screen, ColumnStatisticsScreen):
-                screen.set_dataset(None)
-            if isinstance(screen, RankScreen):
-                screen.set_dataset(None)
-            if isinstance(screen, SaveDataScreen):
-                screen.set_save_data_service(self._save_data_service)
-                screen.set_dataset(None)
+    def _create_screen_for_node(self, node_id: str, widget_id: str) -> QWidget:
+        screen = self._widget_index[widget_id].screen_factory()
+        if isinstance(screen, DatasetsScreen):
+            screen.set_dataset_catalog_service(self._dataset_catalog_service)
+        if isinstance(screen, DataInfoScreen):
+            screen.set_data_info_service(self._data_info_service)
+            screen.set_llm_context_builder(self._llm_context_builder)
+            screen.set_llm_analyzer(self._llm_analyzer)
+            screen.set_llm_session_config(self._llm_session_config)
+        if isinstance(screen, DataTableScreen):
+            screen.set_preview_service(self._preview_service)
+        if isinstance(screen, PaintDataScreen):
+            screen.set_paint_data_service(self._paint_data_service)
+        if isinstance(screen, ColorScreen):
+            screen.set_color_settings_service(self._color_settings_service)
+        if isinstance(screen, SaveDataScreen):
+            screen.set_save_data_service(self._save_data_service)
+        output_handler = getattr(screen, "on_output_changed", None)
+        if callable(output_handler):
+            output_handler(lambda node_id=node_id: self._handle_node_output_changed(node_id))
+        input_handler = getattr(screen, "set_input_payload", None)
+        if callable(input_handler):
+            input_handler(None)
+        return screen
+
+    def _sync_node_runtimes(self) -> None:
+        scene = self._workspace.canvas.workflow_scene
+        active_records = {record.node_id: record for record in scene.node_records()}
+
+        for node_id in list(self._node_runtimes):
+            if node_id in active_records:
+                continue
+            self._workspace.remove_node(node_id)
+            self._node_runtimes.pop(node_id, None)
+
+        for node_id, record in active_records.items():
+            if node_id in self._node_runtimes:
+                continue
+            screen = self._create_screen_for_node(node_id, record.widget_id)
+            runtime = NodeRuntime(node_id=node_id, widget_id=record.widget_id, screen=screen)
+            self._node_runtimes[node_id] = runtime
+            self._workspace.register_node_screen(
+                node_id,
+                record.widget_id,
+                screen,
+                data_preview_provider=lambda node_id=node_id: self._node_data_preview_snapshot(node_id),
+                data_preview_enabled_provider=lambda node_id=node_id: self._node_data_preview_enabled(node_id),
+            )
 
     def _connect_scene_signals(self) -> None:
         scene = self._workspace.canvas.workflow_scene
@@ -587,30 +604,49 @@ class MainWindow(QMainWindow):
             status_message=f"{category.label} category selected.",
         )
 
-    def _show_widget(self, widget_id: str) -> None:
-        widget = self._widget_index[widget_id]
-        self._workspace.show_widget(widget_id)
-        self._state_store.update(selected_widget=widget_id, status_message=f"{widget.label} screen opened.")
+    def _show_widget(self, node_id: str) -> None:
+        requested_id = node_id
+        node_id = self._resolve_node_id(requested_id)
+        if node_id is None and requested_id in self._widget_index:
+            created = self._workspace.add_workflow_node(requested_id)
+            self._sync_node_runtimes()
+            node_id = created.node_id
+        if node_id is None:
+            return
+        record = self._workspace.canvas.workflow_scene.node_record(node_id)
+        if record is None:
+            return
+        widget = self._widget_index[record.widget_id]
+        self._workspace.show_widget(node_id)
+        self._state_store.update(selected_widget=record.widget_id, status_message=f"{widget.label} screen opened.")
 
     def _spawn_widget_from_catalog(self, widget_id: str) -> None:
         widget = self._widget_index[widget_id]
-        self._workspace.canvas.add_workflow_node(widget_id)
+        self._workspace.add_workflow_node(widget_id)
+        self._sync_node_runtimes()
         self._state_store.update(selected_widget=widget_id, status_message=f"{widget.label} added to the workflow.")
 
+    def _resolve_node_id(self, identifier: str | None) -> str | None:
+        if not identifier:
+            return None
+        if identifier in self._node_runtimes:
+            return identifier
+        for node_id, runtime in self._node_runtimes.items():
+            if runtime.widget_id == identifier:
+                return node_id
+        return None
+
     def _handle_file_selected(self, path: str) -> None:
-        try:
-            dataset = self._file_import_service.load(path)
-        except PortakalDataError as exc:
-            QMessageBox.warning(self, "Open Dataset", str(exc))
-            self._state_store.update(status_message=f"Could not load dataset: {Path(path).name}")
+        node_id = self._resolve_node_id("file")
+        if node_id is None:
+            record = self._workspace.add_workflow_node("file")
+            self._sync_node_runtimes()
+            node_id = record.node_id
+        runtime = self._node_runtimes.get(node_id)
+        if runtime is None or not isinstance(runtime.screen, FileScreen):
             return
-        self._apply_dataset(dataset, status_message=f"Selected dataset: {dataset.source.path.name}")
-
-    def _handle_imported_dataset(self, dataset: DatasetHandle) -> None:
-        self._apply_dataset(dataset, status_message=f"Imported dataset: {dataset.source.path.name}")
-
-    def _handle_transformed_dataset(self, dataset: DatasetHandle) -> None:
-        self._apply_dataset(dataset, status_message=f"Updated dataset: {dataset.source.path.name}")
+        runtime.screen.set_selected_file(path)
+        self._handle_node_output_changed(node_id)
 
     def _on_state_changed(self, state: AppState) -> None:
         self._status_bar.set_message(state.status_message)
@@ -618,9 +654,16 @@ class MainWindow(QMainWindow):
             self._status_log.append(state.status_message)
 
     def _serialize_workflow(self) -> dict[str, object]:
+        workflow = self._workspace.canvas.workflow_scene.snapshot()
+        node_map = {str(node["id"]): node for node in workflow.get("nodes", [])}
+        for node_id, runtime in self._node_runtimes.items():
+            node_data = node_map.get(node_id)
+            if node_data is None:
+                continue
+            serializer = getattr(runtime.screen, "serialize_node_state", None)
+            node_data["state"] = serializer() if callable(serializer) else {}
         return {
-            "workflow": self._workspace.canvas.workflow_scene.snapshot(),
-            "dataset_path": self.state.current_dataset_path,
+            "workflow": workflow,
             "workflow_info": {
                 "title": self.state.workflow_title,
                 "description": self.state.workflow_description,
@@ -629,13 +672,14 @@ class MainWindow(QMainWindow):
 
     def _restore_serialized_workflow(self, payload: dict[str, object], *, reset_saved_state: bool = False) -> None:
         workflow = payload.get("workflow", {})
-        dataset_path = payload.get("dataset_path")
         workflow_info = payload.get("workflow_info", {})
         self._history_guard = True
         try:
             self._workspace.close_all_dialogs()
             self._workspace.canvas.workflow_scene.restore_snapshot(workflow if isinstance(workflow, dict) else {}, emit_status=False)
-            self._apply_dataset_path(str(dataset_path) if isinstance(dataset_path, str) and dataset_path else None)
+            self._sync_node_runtimes()
+            self._restore_node_states(workflow if isinstance(workflow, dict) else {})
+            self._recompute_node_runtime()
             self._apply_workflow_info(workflow_info if isinstance(workflow_info, dict) else {})
         finally:
             self._history_guard = False
@@ -645,33 +689,176 @@ class MainWindow(QMainWindow):
         self._refresh_modified_state()
         self._update_action_states()
 
-    def _apply_dataset_path(self, path: str | None) -> None:
-        dataset: DatasetHandle | None = None
-        if path:
-            try:
-                dataset = self._file_import_service.load(path)
-            except PortakalDataError as exc:
-                QMessageBox.warning(self, "Load Workflow Dataset", str(exc))
-        self._apply_dataset(dataset, path=path, status_message="Workflow loaded." if path else "Ready")
+    def _restore_node_states(self, workflow: dict[str, object]) -> None:
+        nodes = workflow.get("nodes", [])
+        if not isinstance(nodes, list):
+            return
+        node_states = {str(node.get("id")): node.get("state", {}) for node in nodes if isinstance(node, dict)}
+        topological_order = self._topological_node_order(workflow)
 
-    def _apply_dataset(
-        self,
-        dataset: DatasetHandle | None,
-        *,
-        path: str | None = None,
-        status_message: str,
-    ) -> None:
-        dataset_path = str(dataset.source.path) if dataset is not None else path
-        dataset_id = dataset.dataset_id if dataset is not None else (Path(path).name if path else None)
+        for node_id in topological_order:
+            runtime = self._node_runtimes.get(node_id)
+            if runtime is None or self._widget_index[runtime.widget_id].input_ports:
+                continue
+            restore = getattr(runtime.screen, "restore_node_state", None)
+            state_payload = node_states.get(node_id, {})
+            if callable(restore) and isinstance(state_payload, dict):
+                restore(state_payload)
+
+        self._recompute_node_runtime()
+
+        for node_id in topological_order:
+            runtime = self._node_runtimes.get(node_id)
+            if runtime is None or not self._widget_index[runtime.widget_id].input_ports:
+                continue
+            restore = getattr(runtime.screen, "restore_node_state", None)
+            state_payload = node_states.get(node_id, {})
+            if callable(restore) and isinstance(state_payload, dict):
+                restore(state_payload)
+
+    def _topological_node_order(self, workflow: dict[str, object] | None = None) -> list[str]:
+        snapshot = workflow if isinstance(workflow, dict) else self._workspace.canvas.workflow_scene.snapshot()
+        node_ids = [str(node["id"]) for node in snapshot.get("nodes", []) if isinstance(node, dict) and "id" in node]
+        indegree = {node_id: 0 for node_id in node_ids}
+        adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+        for edge in snapshot.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            source_node_id = str(edge.get("source_node_id") or "")
+            target_node_id = str(edge.get("target_node_id") or "")
+            if source_node_id not in indegree or target_node_id not in indegree:
+                continue
+            adjacency[source_node_id].append(target_node_id)
+            indegree[target_node_id] += 1
+
+        ready = [node_id for node_id in node_ids if indegree[node_id] == 0]
+        ordered: list[str] = []
+        while ready:
+            current = ready.pop(0)
+            ordered.append(current)
+            for neighbour in adjacency[current]:
+                indegree[neighbour] -= 1
+                if indegree[neighbour] == 0:
+                    ready.append(neighbour)
+        if len(ordered) != len(node_ids):
+            return node_ids
+        return ordered
+
+    def _handle_node_output_changed(self, _node_id: str) -> None:
+        if self._runtime_guard:
+            return
+        self._recompute_node_runtime()
+        self._refresh_modified_state()
+
+    def _recompute_node_runtime(self) -> None:
+        if self._runtime_guard:
+            return
+        workflow = self._workspace.canvas.workflow_scene.snapshot()
+        ordered = self._topological_node_order(workflow)
+        node_map = {str(node["id"]): node for node in workflow.get("nodes", []) if isinstance(node, dict)}
+        if len(ordered) != len(node_map):
+            self._state_store.update(status_message="Workflow cycle detected.")
+            return
+
+        incoming_edges: dict[tuple[str, str], tuple[str, str]] = {}
+        for edge in workflow.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            incoming_edges[(str(edge.get("target_node_id") or ""), str(edge.get("target_port_id") or ""))] = (
+                str(edge.get("source_node_id") or ""),
+                str(edge.get("source_port_id") or ""),
+            )
+
+        self._runtime_guard = True
+        try:
+            for node_id in ordered:
+                runtime = self._node_runtimes.get(node_id)
+                if runtime is None:
+                    continue
+                definition = self._widget_index[runtime.widget_id]
+                previous_inputs = dict(runtime.input_payloads)
+                resolved_inputs: dict[str, WorkflowPayload | None] = {}
+                for port in definition.input_ports:
+                    source_edge = incoming_edges.get((node_id, port.id))
+                    if source_edge is None:
+                        resolved_inputs[port.id] = None
+                        continue
+                    source_runtime = self._node_runtimes.get(source_edge[0])
+                    resolved_inputs[port.id] = source_runtime.output_payload if source_runtime is not None else None
+                runtime.input_payloads = resolved_inputs
+
+                input_handler = getattr(runtime.screen, "set_input_payload", None)
+                if callable(input_handler) and definition.input_ports:
+                    primary_port_id = definition.input_ports[0].id
+                    if previous_inputs.get(primary_port_id) != resolved_inputs.get(primary_port_id):
+                        input_handler(resolved_inputs.get(primary_port_id))
+
+                output_dataset = None
+                output_provider = getattr(runtime.screen, "current_output_dataset", None)
+                if callable(output_provider):
+                    output_dataset = output_provider()
+                if definition.output_ports and output_dataset is not None:
+                    runtime.output_payload = WorkflowPayload(definition.output_ports[0].label, output_dataset)
+                else:
+                    runtime.output_payload = None
+        finally:
+            self._runtime_guard = False
+        self._update_derived_dataset_state(ordered)
+        self._workspace.refresh_dialog_footers()
+
+    def _update_derived_dataset_state(self, ordered_node_ids: list[str]) -> None:
+        active_payload = None
+        for node_id in ordered_node_ids:
+            runtime = self._node_runtimes.get(node_id)
+            if runtime is None or runtime.output_payload is None:
+                continue
+            active_payload = runtime.output_payload
+        if active_payload is None:
+            self._state_store.update(current_dataset=None, current_dataset_id=None, current_dataset_path=None)
+            return
+        dataset = active_payload.dataset
         self._state_store.update(
             current_dataset=dataset,
-            current_dataset_id=dataset_id,
-            current_dataset_path=dataset_path,
-            status_message=status_message,
+            current_dataset_id=dataset.dataset_id,
+            current_dataset_path=str(dataset.source.path),
         )
-        self._workspace.set_current_dataset(dataset)
-        self._workspace.set_current_dataset_path(dataset_path)
-        self._propagate_dataset_to_screens(dataset, dataset_path)
+
+    def _dataset_preview_snapshot(self, payload: WorkflowPayload) -> dict[str, object]:
+        dataset = payload.dataset
+        headers = list(dataset.dataframe.columns)
+        rows = [
+            ["" if value is None else str(value) for value in row]
+            for row in dataset.dataframe.head(200).rows()
+        ]
+        total_rows = dataset.row_count
+        return {
+            "summary": "\n".join(
+                [
+                    f"{payload.port_label}: {dataset.source.path.name}: {total_rows} instances, {len(headers)} variables",
+                    f"Showing first {len(rows)} rows in the preview" if total_rows > len(rows) else "Showing all rows in the preview",
+                ]
+            ),
+            "headers": headers,
+            "rows": rows,
+        }
+
+    def _node_data_preview_snapshot(self, node_id: str) -> dict[str, object]:
+        runtime = self._node_runtimes.get(node_id)
+        if runtime is None:
+            return {"summary": "No preview available.", "headers": [], "rows": []}
+        if runtime.output_payload is not None:
+            return self._dataset_preview_snapshot(runtime.output_payload)
+        input_payload = next((payload for payload in runtime.input_payloads.values() if payload is not None), None)
+        if input_payload is not None:
+            return self._dataset_preview_snapshot(input_payload)
+        preview_provider = getattr(runtime.screen, "data_preview_snapshot", None)
+        if callable(preview_provider):
+            return preview_provider()
+        return {"summary": "No preview available.", "headers": [], "rows": []}
+
+    def _node_data_preview_enabled(self, node_id: str) -> bool:
+        snapshot = self._node_data_preview_snapshot(node_id)
+        return bool(snapshot.get("headers") or snapshot.get("rows"))
 
     def _apply_workflow_info(self, workflow_info: dict[str, object]) -> None:
         title = str(workflow_info.get("title") or "Untitled")
@@ -687,51 +874,15 @@ class MainWindow(QMainWindow):
     def _handle_workflow_changed(self) -> None:
         if self._history_guard:
             return
+        self._sync_node_runtimes()
+        self._recompute_node_runtime()
         snapshot = self._serialize_workflow()
         if self._undo_history and self._undo_history[-1] == snapshot:
             return
         self._undo_history.append(copy.deepcopy(snapshot))
         self._redo_history.clear()
-        self._propagate_dataset_to_screens(self.state.current_dataset, self.state.current_dataset_path)
         self._refresh_modified_state()
         self._update_action_states()
-
-    def _propagate_dataset_to_screens(self, dataset: DatasetHandle | None, dataset_path: str | None) -> None:
-        for widget_id, widget in self._workspace.screen_items():
-            receives_data = self._widget_receives_data(widget_id)
-            dataset_or_path = (dataset or dataset_path) if receives_data else None
-            dataset_only = dataset if receives_data else None
-
-            if isinstance(widget, FileScreen):
-                widget.set_selected_file(dataset or dataset_path)
-            if isinstance(widget, CSVImportScreen):
-                widget.set_dataset(dataset)
-            if isinstance(widget, DatasetsScreen):
-                widget.set_dataset(dataset)
-            if isinstance(widget, DataInfoScreen):
-                widget.set_dataset(dataset_or_path)
-            if isinstance(widget, DataTableScreen):
-                widget.set_dataset(dataset_or_path)
-            if isinstance(widget, PaintDataScreen):
-                widget.set_dataset(dataset_only)
-            if isinstance(widget, EditDomainScreen):
-                widget.set_dataset(dataset_or_path)
-            if isinstance(widget, ColorScreen):
-                widget.set_dataset(dataset_only)
-            if isinstance(widget, ColumnStatisticsScreen):
-                widget.set_dataset(dataset_or_path)
-            if isinstance(widget, RankScreen):
-                widget.set_dataset(dataset_or_path)
-            if isinstance(widget, SaveDataScreen):
-                widget.set_dataset(dataset_only)
-        self._workspace.refresh_dialog_footers()
-
-    def _widget_receives_data(self, widget_id: str) -> bool:
-        definition = self._widget_index[widget_id]
-        if not definition.input_ports:
-            return True
-        scene = self._workspace.canvas.workflow_scene
-        return scene.widget_has_data_path(widget_id)
 
     def _refresh_modified_state(self) -> None:
         current = self._serialize_workflow()
@@ -746,6 +897,10 @@ class MainWindow(QMainWindow):
 
     def _selected_node(self):
         return self._workspace.canvas.workflow_scene.primary_selected_node()
+
+    def _selected_node_id(self) -> str | None:
+        node = self._selected_node()
+        return node.node_id if node is not None else None
 
     def _selected_widget_id(self) -> str | None:
         node = self._selected_node()
@@ -777,7 +932,7 @@ class MainWindow(QMainWindow):
     def _new_workflow(self) -> None:
         self._current_workflow_path = None
         self._set_frozen(False)
-        self._restore_serialized_workflow({"workflow": {"nodes": [], "edges": [], "annotations": []}, "dataset_path": None}, reset_saved_state=True)
+        self._restore_serialized_workflow({"workflow": {"nodes": [], "edges": [], "annotations": []}}, reset_saved_state=True)
         self._state_store.update(workflow_title="Untitled", workflow_description="", status_message="New workflow created.")
 
     def _open_workflow_dialog(self) -> None:
@@ -986,11 +1141,11 @@ class MainWindow(QMainWindow):
         self._state_store.update(status_message="Workflow margins shown." if checked else "Workflow margins hidden.")
 
     def _open_selected_widget(self) -> None:
-        widget_id = self._selected_widget_id()
-        if widget_id is None:
+        node_id = self._selected_node_id()
+        if node_id is None:
             self._state_store.update(status_message="Select a widget node first.")
             return
-        self._show_widget(widget_id)
+        self._show_widget(node_id)
 
     def _rename_selected_widget(self) -> None:
         node = self._selected_node()
@@ -1002,12 +1157,16 @@ class MainWindow(QMainWindow):
             self._workspace.canvas.workflow_scene.rename_selected_node(new_name.strip())
 
     def _show_selected_widget_help(self) -> None:
-        widget_id = self._selected_widget_id()
-        if widget_id is None:
+        node_id = self._selected_node_id()
+        if node_id is None:
             self._state_store.update(status_message="Select a widget node first.")
             return
-        widget = self._widget_index[widget_id]
-        QMessageBox.information(self, f"{widget.label} Help", widget.description or "No help text available.")
+        runtime = self._node_runtimes.get(node_id)
+        widget_id = self._selected_widget_id()
+        widget = self._widget_index[widget_id] if widget_id is not None else None
+        help_provider = getattr(runtime.screen, "help_text", None) if runtime is not None else None
+        help_text = help_provider() if callable(help_provider) else (widget.description if widget is not None else "No help text available.")
+        QMessageBox.information(self, f"{widget.label if widget is not None else 'Widget'} Help", help_text)
 
     def _raise_widget_windows(self) -> None:
         self._workspace.raise_all_dialogs()
@@ -1071,8 +1230,10 @@ class MainWindow(QMainWindow):
             empty_action = self._window_groups_menu.addAction("No Widget Windows")
             empty_action.setEnabled(False)
             return
-        for widget_id, dialog in visible_dialogs.items():
-            action = self._window_groups_menu.addAction(self._widget_index[widget_id].label)
+        for node_id, dialog in visible_dialogs.items():
+            record = self._workspace.canvas.workflow_scene.node_record(node_id)
+            label = record.label if record is not None else node_id
+            action = self._window_groups_menu.addAction(label)
             action.triggered.connect(lambda _checked=False, target=dialog: self._raise_dialog(target))
 
     def _raise_dialog(self, dialog: QDialog) -> None:

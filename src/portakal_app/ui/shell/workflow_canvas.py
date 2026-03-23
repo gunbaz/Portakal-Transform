@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from portakal_app.models import PortDefinition, WidgetDefinition
+from portakal_app.models import PortDefinition, WidgetDefinition, workflow_ports_are_compatible
 from portakal_app.ui.icons import get_widget_icon
 
 
@@ -549,7 +549,7 @@ class WorkflowNodeItem(QGraphicsObject):
         super().mouseMoveEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:
-        self.activated.emit(self.widget_definition.id)
+        self.activated.emit(self.node_id)
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
@@ -935,7 +935,7 @@ class WorkflowScene(QGraphicsScene):
             return False, "That input port is already connected."
         source_label = self._port_label(source_ref)
         target_label = self._port_label(target_ref)
-        if source_label != target_label:
+        if not workflow_ports_are_compatible(source_ref.widget_id, source_label, target_ref.widget_id, target_label):
             return False, f"Port types do not match: {source_label} cannot connect to {target_label}."
         return True, "Connection created."
 
@@ -956,6 +956,15 @@ class WorkflowScene(QGraphicsScene):
 
     def edge_count(self) -> int:
         return len(self._edges)
+
+    def node_records(self) -> list[WorkflowNodeRecord]:
+        return [WorkflowNodeRecord(node.node_id, node.widget_definition.id, node.display_label) for node in self._nodes.values()]
+
+    def node_record(self, node_id: str) -> WorkflowNodeRecord | None:
+        node = self._nodes.get(node_id)
+        if node is None:
+            return None
+        return WorkflowNodeRecord(node.node_id, node.widget_definition.id, node.display_label)
 
     def widget_has_data_path(self, widget_id: str) -> bool:
         target_node_ids = {node_id for node_id, node in self._nodes.items() if node.widget_definition.id == widget_id}
@@ -1224,7 +1233,7 @@ class WorkflowCanvas(QGraphicsView):
             jitter = QPointF((self._scene.node_count() % 4) * 18.0, (self._scene.node_count() % 3) * 14.0)
             position = center - QPointF(54.0, 29.0) + jitter
         record = self._scene.add_node(widget_id, position)
-        self.nodeDropped.emit(widget_id)
+        self.nodeDropped.emit(record.node_id)
         self.viewChanged.emit()
         return record
 

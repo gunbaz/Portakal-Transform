@@ -19,14 +19,17 @@ from portakal_app.data.models import DatasetHandle, DomainColumnEdit, DomainEdit
 from portakal_app.data.services.domain_transform_service import DomainTransformService
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.ui.screens.file_screen import RoleCellWidget, TypeCellWidget
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
-class EditDomainScreen(QWidget):
+class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._domain_transform_service = DomainTransformService()
         self._dataset_handle: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._apply_callbacks: list[Callable[[DatasetHandle], None]] = []
 
         layout = QVBoxLayout(self)
@@ -88,6 +91,7 @@ class EditDomainScreen(QWidget):
             except Exception:
                 dataset_handle = None
         self._dataset_handle = dataset_handle
+        self._output_dataset = None
         if dataset_handle is None:
             self._set_empty_state()
             return
@@ -100,6 +104,50 @@ class EditDomainScreen(QWidget):
 
     def footer_status_text(self) -> str:
         return str(self._columns_table.rowCount()) if self._dataset_handle is not None else "0"
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        request = self._build_request_from_ui() if self._dataset_handle is not None else DomainEditRequest()
+        return {
+            "request": [
+                {
+                    "original_name": column.original_name,
+                    "new_name": column.new_name,
+                    "logical_type": column.logical_type,
+                    "role": column.role,
+                }
+                for column in request.columns
+            ],
+            "committed": self._output_dataset is not None,
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        if self._dataset_handle is None:
+            return
+        request_payload = payload.get("request", [])
+        if isinstance(request_payload, list):
+            request = DomainEditRequest(
+                columns=tuple(
+                    DomainColumnEdit(
+                        original_name=str(item.get("original_name") or ""),
+                        new_name=str(item.get("new_name") or ""),
+                        logical_type=str(item.get("logical_type") or "unknown"),
+                        role=str(item.get("role") or "feature"),
+                    )
+                    for item in request_payload
+                    if isinstance(item, dict)
+                )
+            )
+            if request.columns:
+                self._populate_from_request(request)
+        if bool(payload.get("committed")):
+            self._apply_changes()
 
     def help_text(self) -> str:
         return (
@@ -156,11 +204,13 @@ class EditDomainScreen(QWidget):
             return
         summary = self._domain_transform_service.summarize_changes(self._dataset_handle, request, updated_dataset)
         self._dataset_handle = updated_dataset
+        self._output_dataset = updated_dataset
         self._summary_label.setText("Domain changes applied to the workflow dataset.")
         self._change_summary_label.setText(summary)
         self._populate_from_request(self._domain_transform_service.build_request(updated_dataset))
         for callback in self._apply_callbacks:
             callback(updated_dataset)
+        self._notify_output_changed()
 
     def _restore_inferred(self) -> None:
         if self._dataset_handle is None:

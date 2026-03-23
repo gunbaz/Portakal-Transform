@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import PaintDataPoint, PaintDataSnapshot, DatasetHandle
 from portakal_app.data.services.paint_data_service import PaintDataService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 LABEL_COLORS = (
@@ -247,11 +248,13 @@ class PaintDataCanvas(QWidget):
         return QPoint(x, y)
 
 
-class PaintDataScreen(QWidget):
+class PaintDataScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None, service: PaintDataService | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._service = service or PaintDataService()
         self._dataset: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._input_snapshot = PaintDataSnapshot()
         self._callbacks: list[Callable[[DatasetHandle], None]] = []
         self._canvas = PaintDataCanvas(self)
@@ -417,13 +420,16 @@ class PaintDataScreen(QWidget):
     def set_dataset(self, dataset: DatasetHandle | str | None) -> None:
         self._dataset = dataset if isinstance(dataset, DatasetHandle) else None
         if self._dataset is None:
+            self._output_dataset = None
             self._input_snapshot = PaintDataSnapshot()
             self._load_snapshot(self._input_snapshot)
             return
 
         if self._dataset.annotations.get("generated_by") == "paint-data":
+            self._output_dataset = self._dataset
             return
 
+        self._output_dataset = None
         snapshot = self._service.build_snapshot(self._dataset)
         self._input_snapshot = snapshot
         self._load_snapshot(snapshot, selected_label=self._selected_label())
@@ -441,6 +447,53 @@ class PaintDataScreen(QWidget):
         total = self._canvas.plot_point_count()
         selected = self._canvas.selected_count()
         return f"{selected} | {total}" if selected else str(total)
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        snapshot = self._current_snapshot()
+        return {
+            "snapshot": {
+                "x_name": snapshot.x_name,
+                "y_name": snapshot.y_name,
+                "label_name": snapshot.label_name,
+                "labels": list(snapshot.labels),
+                "points": [{"x": point.x, "y": point.y, "label": point.label} for point in snapshot.points],
+                "source_name": snapshot.source_name,
+            },
+            "auto_send": self._auto_send_checkbox.isChecked(),
+            "output_committed": self._output_dataset is not None,
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        snapshot_payload = payload.get("snapshot")
+        if isinstance(snapshot_payload, dict):
+            snapshot = PaintDataSnapshot(
+                x_name=str(snapshot_payload.get("x_name") or "x"),
+                y_name=str(snapshot_payload.get("y_name") or "y"),
+                label_name=str(snapshot_payload.get("label_name") or "class"),
+                labels=tuple(str(item) for item in snapshot_payload.get("labels", ()) if str(item).strip()) or ("C1", "C2"),
+                points=tuple(
+                    PaintDataPoint(
+                        x=float(point.get("x", 0.0)),
+                        y=float(point.get("y", 0.0)),
+                        label=str(point.get("label") or "C1"),
+                    )
+                    for point in snapshot_payload.get("points", ())
+                    if isinstance(point, dict)
+                ),
+                source_name=str(snapshot_payload.get("source_name") or "Painted Data"),
+            )
+            self._input_snapshot = snapshot
+            self._load_snapshot(snapshot)
+        self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
+        if bool(payload.get("output_committed")) and self._canvas.plot_point_count() > 0:
+            self._emit_dataset()
 
     def report_snapshot(self) -> dict[str, object]:
         return {
@@ -555,8 +608,10 @@ class PaintDataScreen(QWidget):
         if not snapshot.points:
             return
         dataset = self._service.build_dataset(snapshot)
+        self._output_dataset = dataset
         for callback in self._callbacks:
             callback(dataset)
+        self._notify_output_changed()
 
     def _selected_label(self) -> str | None:
         current_item = self._labels_list.currentItem()

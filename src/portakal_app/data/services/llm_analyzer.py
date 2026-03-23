@@ -21,10 +21,11 @@ SYSTEM_PROMPT = (
     "Allowed severity values: low, medium, high. "
     "Do not wrap the JSON in markdown."
 )
+DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
 
 
 class LLMAnalyzer:
-    def __init__(self, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS) -> None:
         self._timeout_seconds = timeout_seconds
 
     def analyze(self, summary: DatasetSummary, context: str, config: LLMSessionConfig) -> list[AnalysisSuggestion]:

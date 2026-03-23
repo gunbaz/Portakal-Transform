@@ -31,6 +31,9 @@ LLM_PROVIDER_ENV_VARS = {
     "Qwen": ("DASHSCOPE_API_KEY",),
     "Ollama": (),
 }
+WORKFLOW_PORT_COMPATIBILITY_OVERRIDES = {
+    ("Scores", "Data"): frozenset({"data-table", "save-data"}),
+}
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,27 @@ class WidgetDefinition:
 class PortDefinition:
     id: str
     label: str
+
+
+@dataclass(frozen=True)
+class WorkflowPayload:
+    port_label: str
+    dataset: DatasetHandle
+
+
+def workflow_ports_are_compatible(
+    source_widget_id: str,
+    source_label: str,
+    target_widget_id: str,
+    target_label: str,
+) -> bool:
+    _ = source_widget_id
+    if source_label == target_label:
+        return True
+    allowed_targets = WORKFLOW_PORT_COMPATIBILITY_OVERRIDES.get((source_label, target_label))
+    if allowed_targets is None:
+        return False
+    return target_widget_id in allowed_targets
 
 
 @dataclass(frozen=True)

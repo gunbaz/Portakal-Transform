@@ -5,6 +5,7 @@ from portakal_app.data.services.dataset_catalog_service import DatasetCatalogSer
 from portakal_app.data.services.domain_transform_service import DomainTransformService
 from portakal_app.data.services.feature_ranking_service import FeatureRankingService
 from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.data.services.generated_dataset_service import GeneratedDatasetService
 from portakal_app.data.services.llm_analyzer import LLMAnalyzer
 from portakal_app.data.services.llm_context_builder import LLMContextBuilder
 from portakal_app.data.services.paint_data_service import PaintDataService
@@ -20,6 +21,7 @@ __all__ = [
     "DomainTransformService",
     "FeatureRankingService",
     "FileImportService",
+    "GeneratedDatasetService",
     "LLMAnalyzer",
     "LLMContextBuilder",
     "PaintDataService",

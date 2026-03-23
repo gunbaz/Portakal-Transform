@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.errors import PortakalDataError
 from portakal_app.data.models import CSVImportOptions, DatasetHandle
 from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 DELIMITER_OPTIONS = {
@@ -36,11 +37,13 @@ ENCODING_OPTIONS = ("Auto", "utf-8-sig", "utf-8", "cp1254", "latin-1")
 PREVIEW_ROW_LIMIT = 100
 
 
-class CSVImportScreen(QWidget):
+class CSVImportScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._dataset_handle: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._selected_path: str | None = None
         self._resolved_options: CSVImportOptions | None = None
         self._import_callbacks: list[Callable[[DatasetHandle], None]] = []
@@ -168,6 +171,7 @@ class CSVImportScreen(QWidget):
             except PortakalDataError:
                 dataset_handle = None
         self._dataset_handle = dataset_handle
+        self._output_dataset = dataset_handle
         if dataset_handle is None:
             self._set_empty_state()
             return
@@ -177,6 +181,41 @@ class CSVImportScreen(QWidget):
 
     def footer_status_text(self) -> str:
         return str(self._dataset_handle.row_count) if self._dataset_handle is not None else "0"
+
+    def set_input_payload(self, payload) -> None:
+        _ = payload
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        return {
+            "path": self._path_input.text().strip(),
+            "delimiter": self._delimiter_combo.currentText(),
+            "encoding": self._encoding_combo.currentText(),
+            "skip_rows": self._skip_rows_spin.value(),
+            "has_header": self._has_header_checkbox.isChecked(),
+            "committed": self._output_dataset is not None,
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        self._path_input.setText(str(payload.get("path") or ""))
+        self._delimiter_combo.setCurrentText(str(payload.get("delimiter") or "Auto"))
+        self._encoding_combo.setCurrentText(str(payload.get("encoding") or "Auto"))
+        self._skip_rows_spin.setValue(int(payload.get("skip_rows") or 0))
+        self._has_header_checkbox.setChecked(bool(payload.get("has_header", True)))
+        committed = bool(payload.get("committed"))
+        if committed:
+            loaded = self._load_dataset_from_controls()
+            if loaded is None:
+                self._output_dataset = None
+                return
+            dataset, resolved_options = loaded
+            self._output_dataset = dataset
+            self._populate_from_handle(dataset, imported=True, resolved_options=resolved_options)
+            return
+        if self._path_input.text().strip():
+            self._handle_reload_clicked()
 
     def data_preview_snapshot(self) -> dict[str, object]:
         headers = [
@@ -241,8 +280,10 @@ class CSVImportScreen(QWidget):
             return
         dataset, resolved_options = loaded
         self._populate_from_handle(dataset, imported=True, resolved_options=resolved_options)
+        self._output_dataset = dataset
         for callback in self._import_callbacks:
             callback(dataset)
+        self._notify_output_changed()
 
     def _load_dataset_from_controls(self) -> tuple[DatasetHandle, CSVImportOptions] | None:
         path = self._path_input.text().strip()
@@ -313,6 +354,7 @@ class CSVImportScreen(QWidget):
 
     def _set_empty_state(self) -> None:
         self._dataset_handle = None
+        self._output_dataset = None
         self._resolved_options = None
         self._dataset_label.setText("No imported dataset")
         self._status_label.setText("Choose a delimited file and preview it before importing.")

@@ -18,6 +18,7 @@ from portakal_app.data.errors import DatasetSaveError, PortakalDataError, Unsupp
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.data.services.save_data_service import SaveDataService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 def _dataset_label(dataset_handle: DatasetHandle | None) -> str:
@@ -26,9 +27,10 @@ def _dataset_label(dataset_handle: DatasetHandle | None) -> str:
     return dataset_handle.source.path.name
 
 
-class SaveDataScreen(QWidget):
+class SaveDataScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._save_data_service = SaveDataService()
         self._dataset_handle: DatasetHandle | None = None
@@ -110,6 +112,10 @@ class SaveDataScreen(QWidget):
         if self._dataset_handle is None:
             return "0"
         return self._dataset_handle.source.path.suffix.lower() or "data"
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
 
     def _save_default(self) -> None:
         if self._dataset_handle is None:

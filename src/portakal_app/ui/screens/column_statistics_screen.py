@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import ColumnStatisticsResult, DatasetHandle, HistogramBin, ValueFrequency
 from portakal_app.data.services.column_statistics_service import ColumnStatisticsService
 from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 class _HistogramWidget(QWidget):
@@ -86,9 +87,10 @@ class _FrequencyBarsWidget(QWidget):
             painter.drawText(self.width() - 54, y + 12, f"{value.count}")
 
 
-class ColumnStatisticsScreen(QWidget):
+class ColumnStatisticsScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._statistics_service = ColumnStatisticsService()
         self._dataset_handle: DatasetHandle | None = None
@@ -183,6 +185,10 @@ class ColumnStatisticsScreen(QWidget):
 
     def footer_status_text(self) -> str:
         return self._column_combo.currentText() or "Stats"
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
 
     def help_text(self) -> str:
         return (

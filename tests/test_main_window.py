@@ -47,6 +47,13 @@ def _create_saved_workflow(tmp_path, name: str, node_ids: tuple[str, ...] = ("fi
     return path
 
 
+def _open_widget_dialog(window: MainWindow, widget_id: str):
+    window._show_widget(widget_id)
+    node_id = window._resolve_node_id(widget_id)
+    assert node_id is not None
+    return node_id, window._workspace._dialogs[node_id]
+
+
 def test_main_window_defaults_to_data_category(app):
     window = MainWindow()
     assert window.state.selected_category == "data"
@@ -187,8 +194,7 @@ def test_file_close_window_action_closes_active_widget_dialog_first(app, monkeyp
     window = MainWindow()
     window.show()
     QTest.qWait(50)
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    _node_id, dialog = _open_widget_dialog(window, "file")
     assert dialog.isVisible() is True
 
     monkeypatch.setattr("portakal_app.ui.main_window.QApplication.activeWindow", lambda: dialog)
@@ -318,14 +324,12 @@ def test_data_widget_navigation_opens_expected_screens(app):
     window = MainWindow()
     window.show()
     QTest.qWait(50)
-    window._show_widget("data-info")
+    info_node_id, _info_dialog = _open_widget_dialog(window, "data-info")
     assert isinstance(window._workspace.current_widget(), DataInfoScreen)
-    assert window._workspace.is_widget_dialog_visible("data-info")
-    window._show_widget("file")
+    assert window._workspace.is_widget_dialog_visible(info_node_id)
+    file_node_id, dialog = _open_widget_dialog(window, "file")
     assert isinstance(window._workspace.current_widget(), FileScreen)
-    assert window._workspace.is_widget_dialog_visible("file")
-
-    dialog = window._workspace._dialogs["file"]
+    assert window._workspace.is_widget_dialog_visible(file_node_id)
     assert dialog.windowFlags() & Qt.WindowType.FramelessWindowHint
     assert dialog._close_button.text() == "Close"
     assert dialog._menu_button.isVisible()
@@ -655,8 +659,129 @@ def test_edit_domain_apply_updates_global_preview_snapshot(app, tmp_path):
     role_widget.setCurrentText("skip")
     screen._apply_button.click()
 
-    preview = window._workspace.global_data_preview_snapshot()
+    preview = window._node_data_preview_snapshot(target.node_id)
     assert preview["headers"] == ["value", "label"]
+
+
+def test_data_table_selection_drives_downstream_save_data_input(app, tmp_path):
+    window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    table_node = window._workspace.canvas.add_workflow_node("data-table")
+    save_node = window._workspace.canvas.add_workflow_node("save-data")
+    scene = window._workspace.canvas.workflow_scene
+    assert scene.create_connection(source.node_id, table_node.node_id)
+    assert scene.create_connection(table_node.node_id, save_node.node_id)
+
+    csv_path = tmp_path / "selection.csv"
+    csv_path.write_text("label,value\nA,1\nB,2\nC,3\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    save_screen = window._workspace.screen_for_node(save_node.node_id)
+    assert isinstance(save_screen, SaveDataScreen)
+    assert save_screen._save_button.isEnabled() is False
+
+    table_screen = window._workspace.screen_for_node(table_node.node_id)
+    assert isinstance(table_screen, DataTableScreen)
+    table_screen._table.selectRow(1)
+    QTest.qWait(20)
+
+    assert save_screen._save_button.isEnabled() is True
+    preview = window._node_data_preview_snapshot(save_node.node_id)
+    assert preview["headers"] == ["label", "value"]
+    assert preview["rows"] == [["B", "2"]]
+
+
+def test_rank_scores_connect_only_to_compatible_consumers(app, tmp_path):
+    window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    rank_node = window._workspace.canvas.add_workflow_node("rank")
+    table_node = window._workspace.canvas.add_workflow_node("data-table")
+    save_node = window._workspace.canvas.add_workflow_node("save-data")
+    info_node = window._workspace.canvas.add_workflow_node("data-info")
+    scene = window._workspace.canvas.workflow_scene
+
+    assert scene.create_connection(source.node_id, rank_node.node_id)
+    assert scene.create_connection(rank_node.node_id, table_node.node_id)
+    assert scene.create_connection(rank_node.node_id, save_node.node_id)
+    assert not scene.create_connection(rank_node.node_id, info_node.node_id)
+
+    csv_path = tmp_path / "rank-flow.csv"
+    csv_path.write_text("signal,noise,target\n1,9,A\n2,8,A\n9,1,B\n8,2,B\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    table_preview = window._node_data_preview_snapshot(table_node.node_id)
+    assert table_preview["headers"] == ["feature", "type", "score", "method", "details"]
+
+    save_screen = window._workspace.screen_for_node(save_node.node_id)
+    assert isinstance(save_screen, SaveDataScreen)
+    assert save_screen._save_button.isEnabled() is True
+
+
+def test_workflow_restore_preserves_data_table_selection_output(app, tmp_path):
+    window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    table_node = window._workspace.canvas.add_workflow_node("data-table")
+    save_node = window._workspace.canvas.add_workflow_node("save-data")
+    scene = window._workspace.canvas.workflow_scene
+    assert scene.create_connection(source.node_id, table_node.node_id)
+    assert scene.create_connection(table_node.node_id, save_node.node_id)
+
+    csv_path = tmp_path / "persist-selection.csv"
+    csv_path.write_text("label,value\nA,1\nB,2\nC,3\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    table_screen = window._workspace.screen_for_node(table_node.node_id)
+    assert isinstance(table_screen, DataTableScreen)
+    table_screen._table.selectRow(2)
+    QTest.qWait(20)
+
+    workflow_path = tmp_path / "selection-flow.portakal.json"
+    window._write_workflow_file(str(workflow_path))
+
+    restored = MainWindow()
+    restored._open_workflow(str(workflow_path), freeze=False)
+
+    restored_scene = restored._workspace.canvas.workflow_scene
+    restored_table = next(record for record in restored_scene.node_records() if record.widget_id == "data-table")
+    restored_save = next(record for record in restored_scene.node_records() if record.widget_id == "save-data")
+    preview = restored._node_data_preview_snapshot(restored_save.node_id)
+    assert preview["rows"] == [["C", "3"]]
+
+    restored_table_screen = restored._workspace.screen_for_node(restored_table.node_id)
+    assert isinstance(restored_table_screen, DataTableScreen)
+    assert restored_table_screen.footer_status_text() == "1 | 3"
+
+
+def test_two_data_table_nodes_keep_independent_selection_state(app, tmp_path):
+    window = MainWindow()
+    source = window._workspace.canvas.add_workflow_node("file")
+    table_one = window._workspace.canvas.add_workflow_node("data-table")
+    table_two = window._workspace.canvas.add_workflow_node("data-table")
+    save_one = window._workspace.canvas.add_workflow_node("save-data")
+    save_two = window._workspace.canvas.add_workflow_node("save-data")
+    scene = window._workspace.canvas.workflow_scene
+    assert scene.create_connection(source.node_id, table_one.node_id)
+    assert scene.create_connection(source.node_id, table_two.node_id)
+    assert scene.create_connection(table_one.node_id, save_one.node_id)
+    assert scene.create_connection(table_two.node_id, save_two.node_id)
+
+    csv_path = tmp_path / "multi-table.csv"
+    csv_path.write_text("label,value\nA,1\nB,2\nC,3\n", encoding="utf-8")
+    window._handle_file_selected(str(csv_path))
+
+    first_screen = window._workspace.screen_for_node(table_one.node_id)
+    second_screen = window._workspace.screen_for_node(table_two.node_id)
+    assert isinstance(first_screen, DataTableScreen)
+    assert isinstance(second_screen, DataTableScreen)
+
+    first_screen._table.selectRow(0)
+    second_screen._table.selectRow(2)
+    QTest.qWait(20)
+
+    first_preview = window._node_data_preview_snapshot(save_one.node_id)
+    second_preview = window._node_data_preview_snapshot(save_two.node_id)
+    assert first_preview["rows"] == [["A", "1"]]
+    assert second_preview["rows"] == [["C", "3"]]
 
 
 def test_data_table_screen_shows_full_dataset_and_keeps_total_count(app, tmp_path):
@@ -701,8 +826,7 @@ def test_data_table_selected_preview_uses_selected_columns_for_partial_selection
 
 def test_file_dialog_footer_refreshes_after_file_selection(app, tmp_path):
     window = MainWindow()
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    _node_id, dialog = _open_widget_dialog(window, "file")
     assert dialog._status_label.text() == "0"
 
     csv_path = tmp_path / "rows.csv"
@@ -738,8 +862,8 @@ def test_widget_popup_data_action_opens_dialog(app, monkeypatch):
         path = Path(temp_dir) / "preview.csv"
         path.write_text("a,b\n1,2\n", encoding="utf-8")
         window._handle_file_selected(str(path))
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    window._show_widget(file_node.node_id)
+    dialog = window._workspace._dialogs[file_node.node_id]
 
     called = {"data": False}
 
@@ -759,12 +883,12 @@ def test_widget_popup_data_action_uses_workflow_dataset_for_other_modules(app, t
     window = MainWindow()
     csv_path = tmp_path / "shared.csv"
     csv_path.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
-    window._handle_file_selected(str(csv_path))
     file_node = window._workspace.canvas.add_workflow_node("file")
+    window._handle_file_selected(str(csv_path))
     save_node = window._workspace.canvas.add_workflow_node("save-data")
     window._workspace.canvas.workflow_scene.create_connection(file_node.node_id, save_node.node_id)
-    window._show_widget("save-data")
-    dialog = window._workspace._dialogs["save-data"]
+    window._show_widget(save_node.node_id)
+    dialog = window._workspace._dialogs[save_node.node_id]
 
     captured = {}
 
@@ -786,17 +910,16 @@ def test_widget_popup_data_action_disabled_when_widget_not_connected(app, tmp_pa
     csv_path.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
     window._handle_file_selected(str(csv_path))
     window._workspace.canvas.add_workflow_node("file")
-    window._workspace.canvas.add_workflow_node("data-info")
-    window._show_widget("data-info")
-    dialog = window._workspace._dialogs["data-info"]
+    info_node = window._workspace.canvas.add_workflow_node("data-info")
+    window._show_widget(info_node.node_id)
+    dialog = window._workspace._dialogs[info_node.node_id]
     dialog.refresh_footer()
     assert dialog._data_button.isEnabled() is False
 
 
 def test_widget_popup_selected_data_action_opens_dialog(app, monkeypatch):
     window = MainWindow()
-    window._show_widget("data-table")
-    dialog = window._workspace._dialogs["data-table"]
+    _node_id, dialog = _open_widget_dialog(window, "data-table")
 
     called = {"selected": False}
 
@@ -813,8 +936,7 @@ def test_widget_popup_selected_data_action_opens_dialog(app, monkeypatch):
 
 def test_file_widget_footer_menu_contains_real_actions(app):
     window = MainWindow()
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    _node_id, dialog = _open_widget_dialog(window, "file")
     menu = QMenu()
 
     dialog._build_file_submenu(menu)
@@ -829,8 +951,7 @@ def test_file_widget_footer_menu_contains_real_actions(app):
 
 def test_data_info_help_menu_contains_documentation(app):
     window = MainWindow()
-    window._show_widget("data-info")
-    dialog = window._workspace._dialogs["data-info"]
+    _node_id, dialog = _open_widget_dialog(window, "data-info")
     menu = QMenu()
 
     dialog._build_help_submenu(menu)
@@ -934,8 +1055,7 @@ def test_widget_popup_close_button_is_clickable(app):
     window = MainWindow()
     window.show()
     QTest.qWait(50)
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    _node_id, dialog = _open_widget_dialog(window, "file")
     assert dialog.isVisible()
 
     QTest.mouseClick(dialog._close_button, Qt.MouseButton.LeftButton)
@@ -945,16 +1065,14 @@ def test_widget_popup_close_button_is_clickable(app):
 
 def test_file_dialog_wraps_screen_in_scroll_area(app):
     window = MainWindow()
-    window._show_widget("file")
-    dialog = window._workspace._dialogs["file"]
+    _node_id, dialog = _open_widget_dialog(window, "file")
     assert isinstance(dialog._scroll_area, QScrollArea)
     assert dialog._scroll_area.widget() is dialog._screen
 
 
 def test_save_data_dialog_opens_compact(app):
     window = MainWindow()
-    window._show_widget("save-data")
-    dialog = window._workspace._dialogs["save-data"]
+    _node_id, dialog = _open_widget_dialog(window, "save-data")
     assert dialog.width() <= 620
     assert dialog.height() <= 420
     assert dialog._scroll_area is None

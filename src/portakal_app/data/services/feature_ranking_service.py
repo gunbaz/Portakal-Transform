@@ -3,10 +3,16 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from math import sqrt
 
+import polars as pl
+
 from portakal_app.data.models import DatasetHandle, RankedFeature
+from portakal_app.data.services.generated_dataset_service import GeneratedDatasetService
 
 
 class FeatureRankingService:
+    def __init__(self) -> None:
+        self._generated_dataset_service = GeneratedDatasetService()
+
     def rank(
         self,
         dataset: DatasetHandle,
@@ -43,6 +49,27 @@ class FeatureRankingService:
         if top_n is not None and top_n > 0:
             return rows[:top_n]
         return rows
+
+    def build_scores_dataset(self, source_dataset: DatasetHandle, ranked_rows: list[RankedFeature]) -> DatasetHandle:
+        dataframe = pl.DataFrame(
+            {
+                "feature": [row.feature_name for row in ranked_rows],
+                "type": [row.logical_type for row in ranked_rows],
+                "score": [row.score for row in ranked_rows],
+                "method": [row.method for row in ranked_rows],
+                "details": [row.details for row in ranked_rows],
+            }
+        )
+        return self._generated_dataset_service.build_dataset(
+            dataframe,
+            dataset_id=f"{source_dataset.dataset_id}-scores",
+            display_name=f"{source_dataset.display_name} Scores",
+            file_name=f"{source_dataset.dataset_id}-scores.csv",
+            annotations={
+                "generated_by": "rank",
+                "source_dataset_id": source_dataset.dataset_id,
+            },
+        )
 
     def _default_target_name(self, dataset: DatasetHandle) -> str | None:
         target = next((column.name for column in dataset.domain.columns if column.role == "target"), None)

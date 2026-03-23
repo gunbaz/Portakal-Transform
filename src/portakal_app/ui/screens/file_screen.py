@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import ColumnSchema, DatasetHandle
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.ui.icons import get_toolbar_icon
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 @dataclass
@@ -109,9 +110,10 @@ class RoleCellWidget(QComboBox):
         self.currentTextChanged.connect(self.changed.emit)
 
 
-class FileScreen(QWidget):
+class FileScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._file_callbacks: list[Callable[[str], None]] = []
         self._reload_callbacks: list[Callable[[str], None]] = []
@@ -120,6 +122,7 @@ class FileScreen(QWidget):
         self._selected_path: str | None = None
         self._selected_url: str | None = None
         self._dataset_handle: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._dirty = False
         self._column_specs: list[FileColumnSpec] = []
         self._sample_rows: list[list[str]] = []
@@ -289,6 +292,7 @@ class FileScreen(QWidget):
     def set_selected_file(self, dataset: DatasetHandle | str | None) -> None:
         if dataset is None:
             self._dataset_handle = None
+            self._output_dataset = None
             self._selected_path = None
             self._file_combo.setEditText("")
             self._set_info_placeholder()
@@ -313,15 +317,19 @@ class FileScreen(QWidget):
 
         if self._dataset_handle is not None:
             self._populate_from_handle(self._dataset_handle)
+            self._output_dataset = self._dataset_handle
         else:
             self._set_info_placeholder()
             self._set_columns(self._placeholder_columns())
+            self._output_dataset = None
         self._dirty = False
         self._update_buttons()
+        self._notify_output_changed()
 
     def set_remote_url(self, url: str | None) -> None:
         self._selected_url = url
         self._dataset_handle = None
+        self._output_dataset = None
         if url:
             self._url_radio.setChecked(True)
             self._ensure_combo_value(self._url_combo, url)
@@ -330,6 +338,7 @@ class FileScreen(QWidget):
             self._url_combo.setEditText("")
         self._dirty = False
         self._update_buttons()
+        self._notify_output_changed()
 
     def current_source_value(self) -> str | None:
         if self._file_radio.isChecked():
@@ -351,6 +360,28 @@ class FileScreen(QWidget):
         if self._row_count_hint is not None:
             return str(self._row_count_hint)
         return "0"
+
+    def set_input_payload(self, payload) -> None:
+        _ = payload
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        return {
+            "source_mode": "file" if self._file_radio.isChecked() else "url",
+            "selected_path": self._selected_path or "",
+            "selected_url": self._selected_url or "",
+            "file_type_index": self._file_type_combo.currentIndex(),
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        source_mode = str(payload.get("source_mode") or "file")
+        self._file_type_combo.setCurrentIndex(int(payload.get("file_type_index") or 0))
+        if source_mode == "url":
+            self.set_remote_url(str(payload.get("selected_url") or "") or None)
+            return
+        self.set_selected_file(str(payload.get("selected_path") or "") or None)
 
     def report_snapshot(self) -> dict[str, object]:
         source = self.current_source_value() or "No source selected"
@@ -418,8 +449,7 @@ class FileScreen(QWidget):
         if self._file_callbacks:
             for callback in self._file_callbacks:
                 callback(selected)
-        else:
-            self.set_selected_file(selected)
+        self.set_selected_file(selected)
 
     def _handle_reload_clicked(self) -> None:
         source = self.current_source_value()
@@ -429,10 +459,10 @@ class FileScreen(QWidget):
         if callbacks:
             for callback in callbacks:
                 callback(source)
-        elif self._file_radio.isChecked():
+        if self._file_radio.isChecked():
             self.set_selected_file(source)
         else:
-            self._populate_from_url(source)
+            self.set_remote_url(source)
         self._dirty = False
         self._update_buttons()
 
@@ -446,8 +476,10 @@ class FileScreen(QWidget):
         if callbacks:
             for callback in callbacks:
                 callback(source)
-        elif self._file_radio.isChecked():
+        if self._file_radio.isChecked():
             self.set_selected_file(source)
+        else:
+            self.set_remote_url(source)
         self._dirty = False
         self._update_buttons()
 

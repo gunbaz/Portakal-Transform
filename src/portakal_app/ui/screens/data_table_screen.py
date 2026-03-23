@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+import polars as pl
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QItemSelection, QItemSelectionModel
 from PySide6.QtGui import QColor, QPainter, QPalette, QBrush
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -26,7 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 from portakal_app.data.models import DatasetHandle, PreviewPage
+from portakal_app.data.services.generated_dataset_service import GeneratedDatasetService
 from portakal_app.data.services.preview_service import PreviewService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 TYPE_COLORS = {
@@ -70,6 +73,7 @@ class DataTableModel(QAbstractTableModel):
         self._columns: list[DataTableColumn] = []
         self._all_rows: list[list[str]] = []
         self._display_rows: list[list[str]] = []
+        self._display_row_indices: list[int] = []
         self._numeric_ranges: dict[int, tuple[float, float]] = {}
         self._class_colors: dict[str, QColor] = {}
         self._target_column_index: int | None = None
@@ -134,7 +138,10 @@ class DataTableModel(QAbstractTableModel):
             return (1, value.lower())
 
         self.layoutAboutToBeChanged.emit()
-        self._display_rows.sort(key=sort_key, reverse=reverse)
+        ordered_pairs = list(zip(self._display_rows, self._display_row_indices, strict=False))
+        ordered_pairs.sort(key=lambda item: sort_key(item[0]), reverse=reverse)
+        self._display_rows = [row for row, _row_index in ordered_pairs]
+        self._display_row_indices = [row_index for _row, row_index in ordered_pairs]
         self.layoutChanged.emit()
 
     def set_dataset(
@@ -150,6 +157,7 @@ class DataTableModel(QAbstractTableModel):
         self._columns = columns
         self._all_rows = rows
         self._display_rows = list(rows)
+        self._display_row_indices = list(range(len(rows)))
         self._numeric_ranges = numeric_ranges
         self._target_column_index = target_column_index
         self._class_colors = self._build_class_color_map()
@@ -161,6 +169,7 @@ class DataTableModel(QAbstractTableModel):
         self._columns = []
         self._all_rows = []
         self._display_rows = []
+        self._display_row_indices = []
         self._numeric_ranges = {}
         self._class_colors = {}
         self._target_column_index = None
@@ -169,6 +178,7 @@ class DataTableModel(QAbstractTableModel):
     def restore_original_order(self) -> None:
         self.layoutAboutToBeChanged.emit()
         self._display_rows = list(self._all_rows)
+        self._display_row_indices = list(range(len(self._all_rows)))
         self.layoutChanged.emit()
 
     def set_show_labels(self, enabled: bool) -> None:
@@ -188,6 +198,9 @@ class DataTableModel(QAbstractTableModel):
 
     def all_display_rows(self) -> list[list[str]]:
         return self._display_rows
+
+    def source_row_indexes_for_display_rows(self, row_indexes: list[int]) -> list[int]:
+        return [self._display_row_indices[index] for index in row_indexes if 0 <= index < len(self._display_row_indices)]
 
     def _build_class_color_map(self) -> dict[str, QColor]:
         if self._target_column_index is None:
@@ -316,10 +329,12 @@ class _EmptyWidget(QWidget):
         layout.addWidget(self._detail)
 
 
-class DataTableScreen(QWidget):
+class DataTableScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None, preview_service: PreviewService | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._preview_service = preview_service or PreviewService()
+        self._generated_dataset_service = GeneratedDatasetService()
         self._dataset_handle: DatasetHandle | None = None
         self._headers: list[str] = []
         self._rows: list[list[str]] = []
@@ -438,7 +453,7 @@ class DataTableScreen(QWidget):
         self._table.setItemDelegate(self._delegate)
         self._clear_selection_button.clicked.connect(self._table.clearSelection)
         self._select_full_rows_checkbox.toggled.connect(self._update_selection_mode)
-        self._table.selectionModel().selectionChanged.connect(lambda *_args: self._update_selection_summary())
+        self._table.selectionModel().selectionChanged.connect(self._handle_selection_changed)
         table_layout.addWidget(self._table, 1)
 
         splitter.addWidget(self._table_container)
@@ -449,6 +464,58 @@ class DataTableScreen(QWidget):
     def set_preview_service(self, service: PreviewService) -> None:
         """Allow injection of PreviewService after construction."""
         self._preview_service = service
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        if self._dataset_handle is None:
+            return None
+        selected_row_indexes, selected_column_indexes = self._selected_selection_axes()
+        if not selected_row_indexes or not selected_column_indexes:
+            return None
+        source_row_indexes = self._model.source_row_indexes_for_display_rows(selected_row_indexes)
+        selected_headers = [self._headers[index] for index in selected_column_indexes]
+        if not selected_headers:
+            return None
+        records = [
+            {header: self._dataset_handle.dataframe.get_column(header)[row_index] for header in selected_headers}
+            for row_index in source_row_indexes
+        ]
+        subset_df = pl.DataFrame(records) if records else self._dataset_handle.dataframe.select(selected_headers).head(0)
+        role_overrides = {
+            column.name: column.role
+            for column in self._dataset_handle.domain.columns
+            if column.name in selected_headers
+        }
+        return self._generated_dataset_service.build_dataset(
+            subset_df,
+            dataset_id=f"{self._dataset_handle.dataset_id}-selected",
+            display_name=f"{self._dataset_handle.display_name} Selected Data",
+            file_name=f"{self._dataset_handle.dataset_id}-selected.csv",
+            role_overrides=role_overrides,
+            annotations={
+                "generated_by": "data-table",
+                "source_dataset_id": self._dataset_handle.dataset_id,
+            },
+        )
+
+    def serialize_node_state(self) -> dict[str, object]:
+        selected_row_indexes, selected_column_indexes = self._selected_selection_axes()
+        return {
+            "select_full_rows": self._select_full_rows_checkbox.isChecked(),
+            "send_automatically": self._send_auto_checkbox.isChecked(),
+            "selected_rows": selected_row_indexes,
+            "selected_columns": selected_column_indexes,
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        self._select_full_rows_checkbox.setChecked(bool(payload.get("select_full_rows", True)))
+        self._send_auto_checkbox.setChecked(bool(payload.get("send_automatically", True)))
+        row_indexes = [int(index) for index in payload.get("selected_rows", []) if isinstance(index, int | float)]
+        column_indexes = [int(index) for index in payload.get("selected_columns", []) if isinstance(index, int | float)]
+        self._apply_selection_restore(row_indexes, column_indexes)
 
     def _build_panel(self, title: str) -> QFrame:
         frame = QFrame(self)
@@ -703,6 +770,7 @@ class DataTableScreen(QWidget):
     def _restore_original_order(self) -> None:
         self._model.restore_original_order()
         self._update_selection_summary()
+        self._notify_output_changed()
 
     def _selected_row_count(self) -> int:
         selection_model = self._table.selectionModel()
@@ -754,6 +822,31 @@ class DataTableScreen(QWidget):
         self._model.clear()
         self._restore_order_button.setEnabled(False)
         self._stack.setCurrentIndex(0)
+
+    def _handle_selection_changed(self, *_args) -> None:
+        self._update_selection_summary()
+        self._notify_output_changed()
+
+    def _apply_selection_restore(self, row_indexes: list[int], column_indexes: list[int]) -> None:
+        selection_model = self._table.selectionModel()
+        if selection_model is None:
+            return
+        selection_model.clearSelection()
+        if not row_indexes or not column_indexes:
+            return
+        if self._table.selectionBehavior() == QAbstractItemView.SelectionBehavior.SelectRows:
+            for row_index in row_indexes:
+                if 0 <= row_index < self._model.rowCount():
+                    self._table.selectRow(row_index)
+            return
+        selection = QItemSelection()
+        for row_index in row_indexes:
+            for column_index in column_indexes:
+                if not (0 <= row_index < self._model.rowCount() and 0 <= column_index < self._model.columnCount()):
+                    continue
+                index = self._model.index(row_index, column_index)
+                selection.select(index, index)
+        selection_model.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
 
     def _is_float(self, value: str) -> bool:
         try:

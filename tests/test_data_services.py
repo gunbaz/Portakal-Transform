@@ -369,6 +369,7 @@ def test_llm_analyzer_builds_openai_request_and_parses_response(monkeypatch):
         captured["headers"] = headers
         captured["params"] = params
         captured["json"] = json
+        captured["timeout"] = timeout
         return _FakeResponse(
             200,
             {
@@ -399,6 +400,7 @@ def test_llm_analyzer_builds_openai_request_and_parses_response(monkeypatch):
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert captured["json"]["model"] == "gpt-test"
+    assert captured["timeout"] == 90.0
     assert result[0].kind == "risk"
     assert result[1].kind == "suggestion"
 
@@ -444,6 +446,7 @@ def test_llm_analyzer_supports_other_providers(monkeypatch, provider, base_url, 
         captured["headers"] = headers
         captured["params"] = params
         captured["json"] = json
+        captured["timeout"] = timeout
         return _FakeResponse(200, payload)
 
     monkeypatch.setattr("portakal_app.data.services.llm_analyzer.httpx.post", fake_post)
@@ -455,6 +458,7 @@ def test_llm_analyzer_supports_other_providers(monkeypatch, provider, base_url, 
     result = LLMAnalyzer().analyze(summary=None, context="Dataset summary", config=config)  # type: ignore[arg-type]
 
     assert captured["url"] == expected_url
+    assert captured["timeout"] == 90.0
     if provider == "Gemini":
         assert captured["params"] == {"key": "gem-key"}
     elif provider == "Ollama":

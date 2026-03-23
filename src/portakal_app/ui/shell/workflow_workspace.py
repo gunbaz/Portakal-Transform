@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import csv
-from pathlib import Path
-
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QCloseEvent, QColor, QCursor, QDesktopServices, QPainter, QPen, QResizeEvent
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter
@@ -29,7 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from portakal_app.models import WidgetDefinition
-from portakal_app.data.models import DatasetHandle
 from portakal_app.ui.icons import get_toolbar_icon
 from portakal_app.ui.shell.workflow_canvas import WorkflowCanvas
 
@@ -520,7 +516,7 @@ class WidgetScreenDialog(QDialog):
     def refresh_footer(self) -> None:
         self._status_label.setText(self._footer_status_text())
         if callable(self._data_preview_enabled_provider):
-            enabled = bool(self._data_preview_enabled_provider(self._widget_definition.id))
+            enabled = bool(self._data_preview_enabled_provider())
             self._data_button.setEnabled(enabled)
 
     def _make_footer_tool(self, icon_name: str, tooltip: str) -> QToolButton:
@@ -674,7 +670,7 @@ class WidgetScreenDialog(QDialog):
         QMessageBox.information(self, f"{self._widget_definition.label} Help", help_text)
 
     def _show_data_preview(self) -> None:
-        if callable(self._data_preview_enabled_provider) and not self._data_preview_enabled_provider(self._widget_definition.id):
+        if callable(self._data_preview_enabled_provider) and not self._data_preview_enabled_provider():
             return
         preview_data = None
         if callable(self._data_preview_provider):
@@ -894,11 +890,12 @@ class WorkflowWorkspace(QFrame):
         self.setObjectName("contentPanel")
         self._widget_index = widget_index
         self._screens: dict[str, QWidget] = {}
+        self._screen_widget_ids: dict[str, str] = {}
         self._dialogs: dict[str, WidgetScreenDialog] = {}
-        self._last_opened_widget_id: str | None = None
+        self._data_preview_providers: dict[str, object] = {}
+        self._data_preview_enabled_providers: dict[str, object] = {}
+        self._last_opened_node_id: str | None = None
         self._dialogs_on_top = False
-        self._current_dataset_path: Path | None = None
-        self._current_dataset_handle: DatasetHandle | None = None
 
         self._outer_layout = QVBoxLayout(self)
         self._outer_layout.setContentsMargins(18, 18, 18, 18)
@@ -937,21 +934,36 @@ class WorkflowWorkspace(QFrame):
     def mini_map(self) -> WorkflowMiniMap:
         return self._mini_map
 
-    def register_screen(self, widget_id: str, screen: QWidget) -> None:
-        self._screens[widget_id] = screen
+    def register_node_screen(
+        self,
+        node_id: str,
+        widget_id: str,
+        screen: QWidget,
+        *,
+        data_preview_provider=None,
+        data_preview_enabled_provider=None,
+    ) -> None:
+        self._screens[node_id] = screen
+        self._screen_widget_ids[node_id] = widget_id
+        self._data_preview_providers[node_id] = data_preview_provider
+        self._data_preview_enabled_providers[node_id] = data_preview_enabled_provider
 
-    def show_widget(self, widget_id: str) -> None:
-        dialog = self._dialogs.get(widget_id)
+    def show_widget(self, node_id: str) -> None:
+        dialog = self._dialogs.get(node_id)
         if dialog is None:
+            widget_id = self._screen_widget_ids[node_id]
             dialog = WidgetScreenDialog(
                 self._widget_index[widget_id],
-                self._screens[widget_id],
+                self._screens[node_id],
                 self.window(),
-                data_preview_provider=self.global_data_preview_snapshot,
-                data_preview_enabled_provider=self.workflow_data_preview_enabled,
+                data_preview_provider=self._data_preview_providers.get(node_id),
+                data_preview_enabled_provider=self._data_preview_enabled_providers.get(node_id),
             )
             self._apply_dialog_flags(dialog)
-            self._dialogs[widget_id] = dialog
+            self._dialogs[node_id] = dialog
+        record = self._canvas.workflow_scene.node_record(node_id)
+        if record is not None:
+            dialog.setWindowTitle(record.label)
         dialog.refresh_footer()
         self._fit_dialog_to_screen(dialog)
         dialog.show()
@@ -959,15 +971,15 @@ class WorkflowWorkspace(QFrame):
         self._center_dialog(dialog)
         dialog.raise_()
         dialog.activateWindow()
-        self._last_opened_widget_id = widget_id
+        self._last_opened_node_id = node_id
 
-    def add_workflow_node(self, widget_id: str) -> None:
-        self._canvas.add_workflow_node(widget_id)
+    def add_workflow_node(self, widget_id: str):
+        return self._canvas.add_workflow_node(widget_id)
 
     def current_widget(self) -> QWidget:
-        if self._last_opened_widget_id is None:
+        if self._last_opened_node_id is None:
             return None
-        return self._screens[self._last_opened_widget_id]
+        return self._screens[self._last_opened_node_id]
 
     def all_screens(self) -> list[QWidget]:
         return list(self._screens.values())
@@ -975,8 +987,11 @@ class WorkflowWorkspace(QFrame):
     def screen_items(self) -> list[tuple[str, QWidget]]:
         return list(self._screens.items())
 
-    def is_widget_dialog_visible(self, widget_id: str) -> bool:
-        dialog = self._dialogs.get(widget_id)
+    def screen_for_node(self, node_id: str) -> QWidget | None:
+        return self._screens.get(node_id)
+
+    def is_widget_dialog_visible(self, node_id: str) -> bool:
+        dialog = self._dialogs.get(node_id)
         return bool(dialog and dialog.isVisible())
 
     def close_all_dialogs(self) -> None:
@@ -991,81 +1006,30 @@ class WorkflowWorkspace(QFrame):
         return False
 
     def visible_dialogs(self) -> dict[str, WidgetScreenDialog]:
-        return {widget_id: dialog for widget_id, dialog in self._dialogs.items() if dialog.isVisible()}
+        return {node_id: dialog for node_id, dialog in self._dialogs.items() if dialog.isVisible()}
 
-    def refresh_dialog_footers(self, widget_id: str | None = None) -> None:
-        if widget_id is not None:
-            dialog = self._dialogs.get(widget_id)
+    def refresh_dialog_footers(self, node_id: str | None = None) -> None:
+        if node_id is not None:
+            dialog = self._dialogs.get(node_id)
             if dialog is not None:
                 dialog.refresh_footer()
             return
         for dialog in self._dialogs.values():
             dialog.refresh_footer()
 
-    def set_current_dataset_path(self, path: str | None) -> None:
-        self._current_dataset_path = Path(path) if path else None
-
-    def set_current_dataset(self, dataset: DatasetHandle | None) -> None:
-        self._current_dataset_handle = dataset
-        self._current_dataset_path = dataset.source.path if dataset is not None else self._current_dataset_path
-
-    def global_data_preview_snapshot(self) -> dict[str, object]:
-        if self._current_dataset_handle is not None:
-            dataset = self._current_dataset_handle
-            headers = list(dataset.dataframe.columns)
-            rows = [
-                ["" if value is None else str(value) for value in row]
-                for row in dataset.dataframe.head(200).rows()
-            ]
-            total_rows = dataset.row_count
-            return {
-                "summary": "\n".join(
-                    [
-                        f"Data: {dataset.source.path.name}: {total_rows} instances, {len(headers)} variables",
-                        f"Showing first {len(rows)} rows in the preview" if total_rows > len(rows) else "Showing all rows in the preview",
-                    ]
-                ),
-                "headers": headers,
-                "rows": rows,
-            }
-
-        if self._current_dataset_path is None or not self._current_dataset_path.exists():
-            return {"summary": "No workflow dataset loaded.", "headers": [], "rows": []}
-
-        suffix = self._current_dataset_path.suffix.lower()
-        if suffix not in {".csv", ".tsv", ".tab"}:
-            return {
-                "summary": f"Loaded dataset: {self._current_dataset_path.name}\nPreview is currently available for CSV, TSV and TAB files.",
-                "headers": [],
-                "rows": [],
-            }
-
-        delimiter = "\t" if suffix in {".tsv", ".tab"} else ","
-        with self._current_dataset_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.reader(handle, delimiter=delimiter)
-            headers = next(reader, [])
-            rows = []
-            total_rows = 0
-            for row in reader:
-                total_rows += 1
-                if len(rows) < 200:
-                    rows.append(row)
-
-        return {
-            "summary": "\n".join(
-                [
-                    f"Data: {self._current_dataset_path.name}: {total_rows} instances, {len(headers)} variables",
-                    f"Showing first {len(rows)} rows in the preview" if total_rows > len(rows) else "Showing all rows in the preview",
-                ]
-            ),
-            "headers": headers,
-            "rows": rows,
-        }
-
-    def workflow_data_preview_enabled(self, widget_id: str) -> bool:
-        if self._current_dataset_path is None or not self._current_dataset_path.exists():
-            return False
-        return self._canvas.workflow_scene.widget_has_data_path(widget_id)
+    def remove_node(self, node_id: str) -> None:
+        dialog = self._dialogs.pop(node_id, None)
+        if dialog is not None:
+            dialog.hide()
+            dialog.deleteLater()
+        screen = self._screens.pop(node_id, None)
+        if screen is not None and screen.parent() is None:
+            screen.deleteLater()
+        self._screen_widget_ids.pop(node_id, None)
+        self._data_preview_providers.pop(node_id, None)
+        self._data_preview_enabled_providers.pop(node_id, None)
+        if self._last_opened_node_id == node_id:
+            self._last_opened_node_id = None
 
     def raise_all_dialogs(self) -> None:
         for dialog in self.visible_dialogs().values():

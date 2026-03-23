@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import DatasetHandle, RankedFeature
 from portakal_app.data.services.feature_ranking_service import FeatureRankingService
 from portakal_app.data.services.file_import_service import FileImportService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 class _ScoreBarDelegate(QStyledItemDelegate):
@@ -46,7 +47,7 @@ class _ScoreBarDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-class RankScreen(QWidget):
+class RankScreen(QWidget, WorkflowNodeScreenSupport):
     AUTO_TARGET = "Auto (Inferred)"
     NO_TARGET = "None (Heuristic)"
     FILTER_OPTIONS = {
@@ -57,9 +58,11 @@ class RankScreen(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._ranking_service = FeatureRankingService()
         self._dataset_handle: DatasetHandle | None = None
+        self._ranked_rows: list[RankedFeature] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -122,6 +125,7 @@ class RankScreen(QWidget):
         self._dataset_handle = dataset_handle
         self._target_combo.clear()
         if dataset_handle is None:
+            self._ranked_rows = []
             self._dataset_label.setText("Dataset: none")
             self._summary_label.setText("Load a dataset to rank feature usefulness.")
             self._rank_table.setRowCount(0)
@@ -137,6 +141,30 @@ class RankScreen(QWidget):
     def footer_status_text(self) -> str:
         return str(self._rank_table.rowCount()) if self._dataset_handle is not None else "0"
 
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        if self._dataset_handle is None or not self._ranked_rows:
+            return None
+        return self._ranking_service.build_scores_dataset(self._dataset_handle, self._ranked_rows)
+
+    def serialize_node_state(self) -> dict[str, object]:
+        return {
+            "target": self._target_combo.currentText(),
+            "feature_filter": self._feature_filter_combo.currentText(),
+            "top_n": self._top_n_spin.value(),
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        self._feature_filter_combo.setCurrentText(str(payload.get("feature_filter") or "All"))
+        self._top_n_spin.setValue(int(payload.get("top_n") or 10))
+        target = str(payload.get("target") or self.AUTO_TARGET)
+        if self._target_combo.findText(target) >= 0:
+            self._target_combo.setCurrentText(target)
+        self._refresh_ranking()
+
     def help_text(self) -> str:
         return (
             "Rank features with automatic method selection, target override, feature filters, "
@@ -148,6 +176,7 @@ class RankScreen(QWidget):
 
     def _refresh_ranking(self) -> None:
         if self._dataset_handle is None:
+            self._ranked_rows = []
             return
         target_name = self._resolved_target_name()
         feature_filter = self.FILTER_OPTIONS[self._feature_filter_combo.currentText()]
@@ -157,12 +186,14 @@ class RankScreen(QWidget):
             feature_filter=feature_filter,
             top_n=self._top_n_spin.value(),
         )
+        self._ranked_rows = ranked_rows
         self._populate_rankings(ranked_rows)
         effective_target = self._effective_target_name()
         if effective_target is None:
             self._summary_label.setText("No target selected. Ranking uses heuristic mode.")
         else:
             self._summary_label.setText(f"Ranking features against target '{effective_target}'.")
+        self._notify_output_changed()
 
     def _populate_rankings(self, ranked_rows: list[RankedFeature]) -> None:
         self._rank_table.setRowCount(len(ranked_rows))

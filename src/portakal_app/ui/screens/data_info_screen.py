@@ -24,6 +24,7 @@ from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.data.services.llm_analyzer import LLMAnalyzer
 from portakal_app.data.services.llm_context_builder import LLMContextBuilder
 from portakal_app.models import DataInfoViewModel, LLMSessionConfig, MetricCardData
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
 class _AnalysisWorker(QObject):
@@ -57,9 +58,10 @@ class _AnalysisWorker(QObject):
             self.finished.emit(self._token)
 
 
-class DataInfoScreen(QWidget):
+class DataInfoScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._import_service = FileImportService()
         self._data_info_service = DataInfoService()
         self._llm_context_builder = LLMContextBuilder()
@@ -178,6 +180,10 @@ class DataInfoScreen(QWidget):
         self._llm_session_config = config
         self._refresh_provider_label()
         self._update_analyze_button_state()
+
+    def set_input_payload(self, payload) -> None:
+        dataset = payload.dataset if payload is not None else None
+        self.set_dataset(dataset)
 
     def set_dataset(self, dataset_handle: DatasetHandle | str | None) -> None:
         self._analysis_token += 1

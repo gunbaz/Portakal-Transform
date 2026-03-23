@@ -118,14 +118,17 @@ def test_main_window_opens_new_active_widgets(app):
     window.show()
     QTest.qWait(50)
 
+    window._workspace.canvas.add_workflow_node("datasets")
     window._show_widget("datasets")
     assert isinstance(window._workspace.current_widget(), DatasetsScreen)
     assert window._widget_index["datasets"].enabled is True
 
+    window._workspace.canvas.add_workflow_node("paint-data")
     window._show_widget("paint-data")
     assert isinstance(window._workspace.current_widget(), PaintDataScreen)
     assert window._widget_index["paint-data"].enabled is True
 
+    window._workspace.canvas.add_workflow_node("color")
     window._show_widget("color")
     assert isinstance(window._workspace.current_widget(), ColorScreen)
     assert window._widget_index["color"].enabled is True
@@ -143,7 +146,7 @@ def test_disconnected_input_widget_clears_dataset(app, tmp_path):
     assert scene.create_connection(source.node_id, target.node_id)
 
     window._handle_file_selected(str(path))
-    window._show_widget("paint-data")
+    window._show_widget(target.node_id)
     paint_screen = window._workspace.current_widget()
     assert isinstance(paint_screen, PaintDataScreen)
     assert paint_screen._canvas.plot_point_count() == 2

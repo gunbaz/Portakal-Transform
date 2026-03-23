@@ -22,16 +22,19 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import DatasetCatalogEntry, DatasetHandle
 from portakal_app.data.services.dataset_catalog_service import DatasetCatalogService
+from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 from portakal_app.ui.shared.cards import SectionHeader
 
 
-class DatasetsScreen(QWidget):
+class DatasetsScreen(QWidget, WorkflowNodeScreenSupport):
     def __init__(self, parent: QWidget | None = None, service: DatasetCatalogService | None = None) -> None:
         super().__init__(parent)
+        self._init_workflow_node_support()
         self._service = service or DatasetCatalogService()
         self._entries = list(self._service.available_datasets())
         self._callbacks: list[Callable[[DatasetHandle], None]] = []
         self._current_dataset: DatasetHandle | None = None
+        self._output_dataset: DatasetHandle | None = None
         self._filtered_entries: list[DatasetCatalogEntry] = []
         self._selection_guard = False
 
@@ -167,6 +170,8 @@ class DatasetsScreen(QWidget):
 
     def set_dataset(self, dataset: DatasetHandle | None) -> None:
         self._current_dataset = dataset
+        if dataset is None:
+            self._output_dataset = None
 
     def help_text(self) -> str:
         return (
@@ -179,6 +184,35 @@ class DatasetsScreen(QWidget):
 
     def footer_status_text(self) -> str:
         return f"{self._service.downloaded_count()} / {len(self._entries)}"
+
+    def set_input_payload(self, payload) -> None:
+        _ = payload
+
+    def current_output_dataset(self) -> DatasetHandle | None:
+        return self._output_dataset
+
+    def serialize_node_state(self) -> dict[str, object]:
+        selected_entry = self._selected_entry()
+        return {
+            "search_text": self._search_input.text(),
+            "domain": self._domain_combo.currentText(),
+            "selected_dataset_id": selected_entry.dataset_id if selected_entry is not None else "",
+            "auto_send": self._auto_send_checkbox.isChecked(),
+            "committed_dataset_id": self._output_dataset.dataset_id if self._output_dataset is not None else "",
+        }
+
+    def restore_node_state(self, payload: dict[str, object]) -> None:
+        self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
+        self._search_input.setText(str(payload.get("search_text") or ""))
+        self._domain_combo.setCurrentText(str(payload.get("domain") or "All"))
+        selected_dataset_id = str(payload.get("selected_dataset_id") or "")
+        committed_dataset_id = str(payload.get("committed_dataset_id") or "")
+        if selected_dataset_id:
+            self._select_dataset_id(selected_dataset_id)
+        if committed_dataset_id and selected_dataset_id == committed_dataset_id:
+            self._send_selected_dataset()
+        elif selected_dataset_id:
+            self._download_selected_preview()
 
     def report_snapshot(self) -> dict[str, object]:
         entry = self._selected_entry()
@@ -346,6 +380,18 @@ class DatasetsScreen(QWidget):
             QMessageBox.warning(self, "Datasets", f"Dataset could not be sent.\n\n{exc}")
             return
         self._current_dataset = dataset
+        self._output_dataset = dataset
         self._download_selected_preview()
         for callback in self._callbacks:
             callback(dataset)
+        self._notify_output_changed()
+
+    def _select_dataset_id(self, dataset_id: str) -> None:
+        for row_index, entry in enumerate(self._filtered_entries):
+            if entry.dataset_id != dataset_id:
+                continue
+            self._selection_guard = True
+            self._table.selectRow(row_index)
+            self._selection_guard = False
+            self._update_selection_details(allow_auto_send=False)
+            return
