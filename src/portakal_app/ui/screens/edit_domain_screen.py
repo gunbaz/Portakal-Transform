@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QCheckBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -73,6 +74,10 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer.addStretch(1)
 
+        self._auto_send_checkbox = QCheckBox("Apply Automatically")
+        self._auto_send_checkbox.setChecked(False)
+        footer.addWidget(self._auto_send_checkbox)
+
         self._apply_button = QPushButton("Apply Domain")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply_changes)
@@ -108,6 +113,8 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
         self.set_dataset(dataset)
+        if dataset is not None and getattr(self, "_auto_send_checkbox", None) is not None and self._auto_send_checkbox.isChecked():
+            self._apply_changes()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -125,6 +132,7 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
                 for column in request.columns
             ],
             "committed": self._output_dataset is not None,
+            "auto_send": getattr(self, "_auto_send_checkbox", None) is not None and self._auto_send_checkbox.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -146,6 +154,8 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
             )
             if request.columns:
                 self._populate_from_request(request)
+        if hasattr(self, "_auto_send_checkbox"):
+            self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
         if bool(payload.get("committed")):
             self._apply_changes()
 
@@ -163,9 +173,11 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
         for row_index, edit in enumerate(request.columns):
             self._columns_table.setItem(row_index, 0, QTableWidgetItem(edit.new_name))
             type_widget = TypeCellWidget(edit.logical_type, self._columns_table)
+            type_widget.changed.connect(lambda _val: self._auto_apply_if_needed())
             self._columns_table.setCellWidget(row_index, 1, type_widget)
             role_widget = RoleCellWidget(edit.role, self._columns_table)
             role_widget.changed.connect(lambda value, source=role_widget: self._enforce_single_target(source, value))
+            role_widget.changed.connect(lambda _val: self._auto_apply_if_needed())
             self._columns_table.setCellWidget(row_index, 2, role_widget)
             sample_values = "-"
             if self._dataset_handle is not None:
@@ -235,6 +247,10 @@ class EditDomainScreen(QWidget, WorkflowNodeScreenSupport):
                 role_widget.blockSignals(True)
                 role_widget.setCurrentText("feature")
                 role_widget.blockSignals(False)
+
+    def _auto_apply_if_needed(self) -> None:
+        if hasattr(self, "_auto_send_checkbox") and self._auto_send_checkbox.isChecked():
+            self._apply_changes()
 
     def _set_empty_state(self) -> None:
         self._dataset_label.setText("Dataset: none")

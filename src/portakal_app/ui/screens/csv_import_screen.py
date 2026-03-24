@@ -155,6 +155,10 @@ class CSVImportScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        self._auto_send_checkbox = QCheckBox("Send Automatically")
+        self._auto_send_checkbox.setChecked(False)
+        layout.addWidget(self._auto_send_checkbox)
+
         self._apply_button = QPushButton("Apply Import")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._handle_apply_clicked)
@@ -196,6 +200,7 @@ class CSVImportScreen(QWidget, WorkflowNodeScreenSupport):
             "skip_rows": self._skip_rows_spin.value(),
             "has_header": self._has_header_checkbox.isChecked(),
             "committed": self._output_dataset is not None,
+            "auto_send": getattr(self, "_auto_send_checkbox", None) is not None and self._auto_send_checkbox.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -204,6 +209,8 @@ class CSVImportScreen(QWidget, WorkflowNodeScreenSupport):
         self._encoding_combo.setCurrentText(str(payload.get("encoding") or "Auto"))
         self._skip_rows_spin.setValue(int(payload.get("skip_rows") or 0))
         self._has_header_checkbox.setChecked(bool(payload.get("has_header", True)))
+        if hasattr(self, "_auto_send_checkbox"):
+            self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
         committed = bool(payload.get("committed"))
         if committed:
             loaded = self._load_dataset_from_controls()
@@ -266,6 +273,8 @@ class CSVImportScreen(QWidget, WorkflowNodeScreenSupport):
     def _mark_dirty(self) -> None:
         if self._dataset_handle is not None:
             self._status_label.setText("Import options changed. Preview or apply to refresh the parsed dataset.")
+            if hasattr(self, "_auto_send_checkbox") and self._auto_send_checkbox.isChecked():
+                self._handle_apply_clicked()
 
     def _handle_reload_clicked(self) -> None:
         loaded = self._load_dataset_from_controls()

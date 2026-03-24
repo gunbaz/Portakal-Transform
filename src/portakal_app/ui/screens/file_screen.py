@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QCheckBox,
     QRadioButton,
     QTableWidget,
     QTableWidgetItem,
@@ -20,7 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from portakal_app.data.models import ColumnSchema, DatasetHandle
+from portakal_app.data.models import ColumnSchema, DatasetHandle, DomainEditRequest, DomainColumnEdit
+from portakal_app.data.services.domain_transform_service import DomainTransformService
 from portakal_app.data.services.file_import_service import FileImportService
 from portakal_app.ui.icons import get_toolbar_icon
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
@@ -80,6 +82,7 @@ class TypeCellWidget(QWidget):
             self._combo.addItem(type_name)
         self._combo.setCurrentText(type_name)
         self._combo.currentTextChanged.connect(self._handle_changed)
+        self._combo.view().window().setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint) # Ensure popup draws correctly
         layout.addWidget(self._combo, 1)
         self._apply_badge(type_name)
 
@@ -108,6 +111,7 @@ class RoleCellWidget(QComboBox):
             self.addItem(role_name)
         self.setCurrentText(role_name)
         self.currentTextChanged.connect(self.changed.emit)
+        self.view().window().setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
 
 
 class FileScreen(QWidget, WorkflowNodeScreenSupport):
@@ -139,6 +143,7 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._build_columns_group(), 1)
         layout.addLayout(self._build_footer())
 
+        self._domain_transform_service = DomainTransformService()
         self._set_source_mode("file")
         self._set_info_placeholder()
         self._set_columns(self._placeholder_columns())
@@ -271,6 +276,10 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        self._auto_send_checkbox = QCheckBox("Send Automatically")
+        self._auto_send_checkbox.setChecked(False)
+        layout.addWidget(self._auto_send_checkbox)
+
         self._apply_button = QPushButton("Apply")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._handle_apply_clicked)
@@ -333,9 +342,20 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
         if url:
             self._url_radio.setChecked(True)
             self._ensure_combo_value(self._url_combo, url)
-            self._populate_from_url(url)
+            try:
+                self._dataset_handle = self._import_service.load_from_url(url)
+                self._populate_from_handle(self._dataset_handle)
+                self._output_dataset = self._dataset_handle
+            except Exception as e:
+                self._set_info_placeholder()
+                self._dataset_title.setText("Error loading URL")
+                self._dataset_description.setText(str(e)[:100])
+                self._set_columns(self._placeholder_columns())
         else:
             self._url_combo.setEditText("")
+            self._set_info_placeholder()
+            self._set_columns(self._placeholder_columns())
+            
         self._dirty = False
         self._update_buttons()
         self._notify_output_changed()
@@ -373,11 +393,14 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
             "selected_path": self._selected_path or "",
             "selected_url": self._selected_url or "",
             "file_type_index": self._file_type_combo.currentIndex(),
+            "auto_send": getattr(self, "_auto_send_checkbox", None) is not None and self._auto_send_checkbox.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
         source_mode = str(payload.get("source_mode") or "file")
         self._file_type_combo.setCurrentIndex(int(payload.get("file_type_index") or 0))
+        if hasattr(self, "_auto_send_checkbox"):
+            self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
         if source_mode == "url":
             self.set_remote_url(str(payload.get("selected_url") or "") or None)
             return
@@ -431,6 +454,12 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
         if self._url_radio.isChecked():
             self._mark_dirty()
 
+    def _mark_dirty(self) -> None:
+        self._dirty = True
+        self._update_buttons()
+        if hasattr(self, "_auto_send_checkbox") and self._auto_send_checkbox.isChecked():
+            self._handle_apply_clicked()
+
     def _set_source_mode(self, mode: str) -> None:
         file_mode = mode == "file"
         self._browse_button.setEnabled(file_mode)
@@ -470,18 +499,48 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
         source = self.current_source_value()
         if not source:
             return
+
+        if self._file_radio.isChecked() and source != self._selected_path:
+            self.set_selected_file(source)
+        elif self._url_radio.isChecked() and source != self._selected_url:
+            self.set_remote_url(source)
+
+        if self._dataset_handle is not None:
+            request = self._build_domain_request()
+            try:
+                self._output_dataset = self._domain_transform_service.apply(self._dataset_handle, request)
+            except Exception:
+                self._output_dataset = self._dataset_handle
+
         callbacks = self._apply_callbacks
         if self._url_radio.isChecked():
             callbacks = self._url_callbacks or self._apply_callbacks
         if callbacks:
             for callback in callbacks:
                 callback(source)
-        if self._file_radio.isChecked():
-            self.set_selected_file(source)
-        else:
-            self.set_remote_url(source)
+
         self._dirty = False
         self._update_buttons()
+
+    def _build_domain_request(self) -> DomainEditRequest:
+        if self._dataset_handle is None:
+            return DomainEditRequest()
+        columns = []
+        for row_index, original_column in enumerate(self._dataset_handle.domain.columns):
+            if row_index >= self._columns_table.rowCount():
+                continue
+            name_item = self._columns_table.item(row_index, 0)
+            type_widget = self._columns_table.cellWidget(row_index, 1)
+            role_widget = self._columns_table.cellWidget(row_index, 2)
+            columns.append(
+                DomainColumnEdit(
+                    original_name=original_column.name,
+                    new_name=(name_item.text().strip() if name_item is not None else original_column.name) or original_column.name,
+                    logical_type=type_widget.current_text() if isinstance(type_widget, TypeCellWidget) else original_column.logical_type,
+                    role=role_widget.currentText() if isinstance(role_widget, RoleCellWidget) else original_column.role,
+                )
+            )
+        return DomainEditRequest(columns=tuple(columns))
 
     def _reset_form(self) -> None:
         self._selected_path = None
@@ -524,23 +583,7 @@ class FileScreen(QWidget, WorkflowNodeScreenSupport):
         self._set_columns(self._columns_from_domain(dataset))
 
     def _populate_from_url(self, url: str) -> None:
-        parsed = urlparse(url)
-        title = Path(parsed.path).stem or parsed.netloc or "Remote dataset"
-        self._dataset_title.setText(title.replace("_", " ").title())
-        self._dataset_description.setText("Remote dataset source")
-        self._dataset_metrics.setText(
-            "\n".join(
-                [
-                    f"URL: {url}",
-                    f"Host: {parsed.netloc or 'unknown'}",
-                    "The backend will validate the remote source and infer schema details.",
-                ]
-            )
-        )
-        self._sample_headers = [spec.name for spec in self._placeholder_columns()]
-        self._sample_rows = []
-        self._row_count_hint = None
-        self._set_columns(self._placeholder_columns())
+        pass # Now handled directly via self._import_service.load_from_url
 
     def _columns_from_domain(self, dataset: DatasetHandle) -> list[FileColumnSpec]:
         return [self._column_from_schema(column) for column in dataset.domain.columns]

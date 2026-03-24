@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -99,6 +101,35 @@ class FileImportService:
             column_count=dataframe.width,
             cache_path=cache_path,
         )
+
+    def load_from_url(self, url: str) -> DatasetHandle:
+        kaggle_match = re.search(r"kaggle\.com/datasets/([^/]+/[^/]+)", url)
+        if not kaggle_match:
+            raise DatasetLoadError(f"Direct URL downloading is only supported for Kaggle dataset URLs currently.")
+        
+        dataset_id = kaggle_match.group(1).split("?")[0]
+        download_dir = Path(tempfile.gettempdir()) / "portakal-kaggle" / dataset_id.replace("/", "_")
+        download_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            subprocess.run(
+                ["kaggle", "datasets", "download", "-d", dataset_id, "-p", str(download_dir), "--unzip"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        except Exception as e:
+            output = getattr(e, "output", str(e))
+            stderr = getattr(e, "stderr", "")
+            raise DatasetLoadError(f"Failed to download Kaggle dataset '{dataset_id}'. Ensure 'kaggle' CLI is installed and configured. Error: {output} {stderr}") from e
+            
+        candidates = list(download_dir.glob("**/*.csv")) + list(download_dir.glob("**/*.parquet")) + list(download_dir.glob("**/*.xlsx"))
+        if not candidates:
+            raise DatasetLoadError(f"No usable data files found in the Kaggle dataset '{dataset_id}'.")
+            
+        # load the first one (usually the main file)
+        target_file = sorted(candidates, key=lambda p: p.stat().st_size, reverse=True)[0]
+        return self.load(str(target_file))
 
     def resolve_delimited_options(self, path: str, options: CSVImportOptions | None = None) -> CSVImportOptions:
         source_path = Path(path).expanduser().resolve()

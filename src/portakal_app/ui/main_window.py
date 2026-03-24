@@ -39,6 +39,7 @@ from portakal_app.data.services.paint_data_service import PaintDataService
 from portakal_app.data.services.profiling_service import ProfilingService
 from portakal_app.data.services.preview_service import PreviewService
 from portakal_app.data.services.save_data_service import SaveDataService
+from portakal_app.ui import i18n
 from portakal_app.models import (
     AppState,
     LLMSessionConfig,
@@ -465,9 +466,18 @@ class MainWindow(QMainWindow):
 
     def _build_options_menu(self, menu: QMenu) -> None:
         self._menus["options"] = menu
+        lang_menu = menu.addMenu("Language / Dil")
+        lang_menu.addAction(self._create_action("lang_en", "English", lambda: i18n.set_language("en")))
+        lang_menu.addAction(self._create_action("lang_tr", "Türkçe", lambda: i18n.set_language("tr")))
+        i18n.on_language_changed(self._handle_language_changed)
+        menu.addSeparator()
         menu.addAction(self._create_action("options_settings", "Settings", self._show_settings_dialog))
         menu.addAction(self._create_action("options_reset_widgets", "Reset Widget Settings...", self._reset_widget_settings))
         menu.addAction(self._create_action("options_addons", "Add-ons...", self._show_addons_dialog))
+
+    def _handle_language_changed(self, lang: str) -> None:
+        msg = "Dil değiştirildi. Yeni pencerelerde ve yapay zeka yanıtlarında etki gösterecektir. Tam çeviri için uygulamayı yeniden başlatmanız gerekebilir." if lang == "tr" else "Language changed. It will take effect on new windows and AI responses. Restart the app for full translation."
+        QMessageBox.information(self, "Language / Dil", msg)
 
     def _build_help_menu(self, menu: QMenu) -> None:
         self._menus["help"] = menu

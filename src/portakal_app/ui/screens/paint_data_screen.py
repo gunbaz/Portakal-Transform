@@ -331,12 +331,14 @@ class PaintDataScreen(QWidget, WorkflowNodeScreenSupport):
         row_x = QHBoxLayout()
         row_x.addWidget(QLabel("Variable X:"))
         self._x_name_input = QLineEdit("x")
+        self._x_name_input.textChanged.connect(lambda _text: self._handle_canvas_changed())
         row_x.addWidget(self._x_name_input, 1)
         layout.addLayout(row_x)
 
         row_y = QHBoxLayout()
         row_y.addWidget(QLabel("Variable Y:"))
         self._y_name_input = QLineEdit("y")
+        self._y_name_input.textChanged.connect(lambda _text: self._handle_canvas_changed())
         row_y.addWidget(self._y_name_input, 1)
         layout.addLayout(row_y)
 

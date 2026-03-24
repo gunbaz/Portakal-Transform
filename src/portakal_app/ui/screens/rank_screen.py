@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QCheckBox,
     QSpinBox,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -116,6 +117,20 @@ class RankScreen(QWidget, WorkflowNodeScreenSupport):
         table_layout.addWidget(self._rank_table)
         layout.addWidget(table_group, 1)
 
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+
+        self._auto_send_checkbox = QCheckBox("Send Automatically")
+        self._auto_send_checkbox.setChecked(False)
+        footer.addWidget(self._auto_send_checkbox)
+
+        self._send_button = QPushButton("Send Data")
+        self._send_button.setProperty("primary", True)
+        self._send_button.clicked.connect(self._notify_output_changed)
+        footer.addWidget(self._send_button)
+
+        layout.addLayout(footer)
+
     def set_dataset(self, dataset_handle: DatasetHandle | str | None) -> None:
         if isinstance(dataset_handle, str):
             try:
@@ -155,11 +170,14 @@ class RankScreen(QWidget, WorkflowNodeScreenSupport):
             "target": self._target_combo.currentText(),
             "feature_filter": self._feature_filter_combo.currentText(),
             "top_n": self._top_n_spin.value(),
+            "auto_send": getattr(self, "_auto_send_checkbox", None) is not None and self._auto_send_checkbox.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
         self._feature_filter_combo.setCurrentText(str(payload.get("feature_filter") or "All"))
         self._top_n_spin.setValue(int(payload.get("top_n") or 10))
+        if hasattr(self, "_auto_send_checkbox"):
+            self._auto_send_checkbox.setChecked(bool(payload.get("auto_send", True)))
         target = str(payload.get("target") or self.AUTO_TARGET)
         if self._target_combo.findText(target) >= 0:
             self._target_combo.setCurrentText(target)
@@ -193,7 +211,10 @@ class RankScreen(QWidget, WorkflowNodeScreenSupport):
             self._summary_label.setText("No target selected. Ranking uses heuristic mode.")
         else:
             self._summary_label.setText(f"Ranking features against target '{effective_target}'.")
-        self._notify_output_changed()
+            
+        self._send_button.setEnabled(len(self._ranked_rows) > 0)
+        if hasattr(self, "_auto_send_checkbox") and self._auto_send_checkbox.isChecked():
+            self._notify_output_changed()
 
     def _populate_rankings(self, ranked_rows: list[RankedFeature]) -> None:
         self._rank_table.setRowCount(len(ranked_rows))

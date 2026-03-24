@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from portakal_app.data.models import DatasetHandle, DatasetSummary
+from portakal_app.ui import i18n
 
 
 class LLMContextBuilder:
@@ -41,6 +42,7 @@ class LLMContextBuilder:
                 'Schema: {"risks":[{"title","body","severity"}], "suggestions":[{"title","body","severity"}]}',
                 'Use severity values only from: "low", "medium", "high".',
                 "Keep each item concise and actionable.",
+                f"Write all 'title' and 'body' text in {'Turkish' if i18n.current_language() == 'tr' else 'English'}.",
             ]
         )
         return "\n".join(lines)
