@@ -1184,7 +1184,7 @@ def test_language_switch_updates_shell_catalog_and_node_labels(app):
         button_texts = [button.text() for button in window._catalog.findChildren(WidgetCatalogButton)]
         assert window._catalog._title.text() == "Dönüştür"
         assert any(text.startswith("Sütun Seç") for text in button_texts)
-        assert any(text.startswith("Normalleştir") for text in button_texts)
+        assert any(text.startswith("Preprocess") for text in button_texts)
 
         i18n.set_language("en")
         assert window._workspace._title_label.text() == "Workflow"

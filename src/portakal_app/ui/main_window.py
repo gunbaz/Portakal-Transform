@@ -556,7 +556,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._sidebar)
 
         self._catalog = WidgetCatalogPanel()
-        self._catalog.setFixedWidth(320)
+        self._catalog.setFixedWidth(380)
         self._catalog.widgetSelected.connect(self._spawn_widget_from_catalog)
         layout.addWidget(self._catalog)
 
