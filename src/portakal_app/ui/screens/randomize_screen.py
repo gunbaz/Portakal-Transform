@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.randomize_service import RandomizeService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui import i18n
 
 
 class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
@@ -30,15 +30,10 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
-        self._dataset_label.setProperty("sectionTitle", True)
-        self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
-        layout.addWidget(self._dataset_label)
-
-        columns_group = QGroupBox("Shuffled Columns")
-        columns_layout = QVBoxLayout(columns_group)
+        columns_group = QGroupBox("Shuffled columns")
+        columns_layout = QHBoxLayout(columns_group)
         columns_layout.setContentsMargins(10, 10, 10, 10)
-        columns_layout.setSpacing(8)
+        columns_layout.setSpacing(15)
 
         self._shuffle_classes = QCheckBox("Classes")
         self._shuffle_classes.setChecked(True)
@@ -51,49 +46,47 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._shuffle_metas = QCheckBox("Metas")
         self._shuffle_metas.setChecked(False)
         columns_layout.addWidget(self._shuffle_metas)
-
+        
+        columns_layout.addStretch(1)
         layout.addWidget(columns_group)
 
-        ratio_group = QGroupBox("Shuffled Rows")
-        ratio_layout = QVBoxLayout(ratio_group)
-        ratio_layout.setContentsMargins(10, 10, 10, 10)
-        ratio_layout.setSpacing(8)
+        rows_group = QGroupBox("Shuffled rows")
+        rows_layout = QVBoxLayout(rows_group)
+        rows_layout.setContentsMargins(10, 10, 10, 10)
+        rows_layout.setSpacing(10)
 
         slider_row = QHBoxLayout()
+        slider_row.addWidget(QLabel("None"))
         self._ratio_slider = QSlider(Qt.Orientation.Horizontal)
         self._ratio_slider.setRange(0, 100)
         self._ratio_slider.setValue(100)
         self._ratio_slider.valueChanged.connect(self._on_ratio_changed)
         slider_row.addWidget(self._ratio_slider, 1)
+        slider_row.addWidget(QLabel("All"))
+
+        rows_layout.addLayout(slider_row)
 
         self._ratio_label = QLabel("100%")
-        self._ratio_label.setMinimumWidth(40)
-        slider_row.addWidget(self._ratio_label)
-        ratio_layout.addLayout(slider_row)
+        self._ratio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        rows_layout.addWidget(self._ratio_label)
 
-        layout.addWidget(ratio_group)
+        self._replicable = QCheckBox("Replicable shuffling")
+        self._replicable.setChecked(False)
+        rows_layout.addWidget(self._replicable)
 
-        seed_group = QGroupBox("Reproducibility")
-        seed_layout = QVBoxLayout(seed_group)
-        seed_layout.setContentsMargins(10, 10, 10, 10)
-        seed_layout.setSpacing(8)
-
-        self._use_seed = QCheckBox("Use seed")
-        self._use_seed.setChecked(True)
-        seed_layout.addWidget(self._use_seed)
-
-        seed_row = QHBoxLayout()
-        seed_row.addWidget(QLabel("Seed:"))
-        self._seed_spin = QSpinBox()
-        self._seed_spin.setRange(0, 999999)
-        self._seed_spin.setValue(42)
-        seed_row.addWidget(self._seed_spin)
-        seed_layout.addLayout(seed_row)
-
-        layout.addWidget(seed_group)
+        layout.addWidget(rows_group)
         layout.addStretch(1)
 
+        self._result_label = QLabel("")
+        self._result_label.setWordWrap(True)
+        layout.addWidget(self._result_label)
+
         footer = QHBoxLayout()
+        
+        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+        
         footer.addStretch(1)
         self._apply_button = QPushButton("Apply")
         self._apply_button.setProperty("primary", True)
@@ -105,10 +98,9 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         dataset = payload.dataset if payload is not None else None
         self._dataset_handle = dataset
         self._output_dataset = None
-        if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
-        else:
-            self._dataset_label.setText("Dataset: none")
+        
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -119,17 +111,27 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
             "shuffle_features": self._shuffle_features.isChecked(),
             "shuffle_metas": self._shuffle_metas.isChecked(),
             "ratio": self._ratio_slider.value(),
-            "use_seed": self._use_seed.isChecked(),
-            "seed": self._seed_spin.value(),
+            "replicable": self._replicable.isChecked(),
+            "auto_apply": self.cb_apply_auto.isChecked()
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
         self._shuffle_classes.setChecked(bool(payload.get("shuffle_classes", True)))
         self._shuffle_features.setChecked(bool(payload.get("shuffle_features", False)))
         self._shuffle_metas.setChecked(bool(payload.get("shuffle_metas", False)))
-        self._ratio_slider.setValue(int(payload.get("ratio", 100)))
-        self._use_seed.setChecked(bool(payload.get("use_seed", True)))
-        self._seed_spin.setValue(int(payload.get("seed", 42)))
+        
+        ratio = int(payload.get("ratio", 100))
+        self._ratio_slider.setValue(ratio)
+        self._ratio_label.setText(f"{ratio}%")
+        
+        # Support older saves for 'use_seed'
+        rep = bool(payload.get("replicable", payload.get("use_seed", False)))
+        self._replicable.setChecked(rep)
+        
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
+
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def help_text(self) -> str:
         return "Randomize (shuffle) the order of rows, columns, or values in the dataset."
@@ -139,20 +141,30 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _on_ratio_changed(self, value: int) -> None:
         self._ratio_label.setText(f"{value}%")
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def _apply(self) -> None:
         if self._dataset_handle is None:
             self._output_dataset = None
+            self._result_label.setText("")
             self._notify_output_changed()
             return
 
-        seed = self._seed_spin.value() if self._use_seed.isChecked() else None
-        self._output_dataset = self._service.randomize(
-            self._dataset_handle,
-            shuffle_classes=self._shuffle_classes.isChecked(),
-            shuffle_features=self._shuffle_features.isChecked(),
-            shuffle_metas=self._shuffle_metas.isChecked(),
-            shuffle_ratio=self._ratio_slider.value(),
-            seed=seed,
-        )
+        seed = 42 if self._replicable.isChecked() else None
+        
+        try:
+            self._output_dataset = self._service.randomize(
+                self._dataset_handle,
+                shuffle_classes=self._shuffle_classes.isChecked(),
+                shuffle_features=self._shuffle_features.isChecked(),
+                shuffle_metas=self._shuffle_metas.isChecked(),
+                shuffle_ratio=self._ratio_slider.value(),
+                seed=seed,
+            )
+            self._result_label.setText("Randomization successful.")
+        except Exception as e:
+            self._output_dataset = None
+            self._result_label.setText(f"Error: {e}")
+            
         self._notify_output_changed()

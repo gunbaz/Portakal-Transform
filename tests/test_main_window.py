@@ -1336,11 +1336,15 @@ def test_widget_cards_have_icons(app):
     assert all(not card.icon().isNull() for card in cards)
 
 
-def test_catalog_panel_has_no_scroll_area(app):
+def test_catalog_panel_scroll_area_is_borderless_and_transparent(app):
     window = MainWindow()
     catalog = window.findChild(WidgetCatalogPanel)
     assert catalog is not None
-    assert not catalog.findChildren(QScrollArea)
+    scroll_areas = catalog.findChildren(QScrollArea)
+    assert len(scroll_areas) == 1
+    scroll = scroll_areas[0]
+    assert scroll.widgetResizable()
+    assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
 
 
 def test_sidebar_scrollbars_are_hidden(app):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import replace
 
 import polars as pl
@@ -10,16 +11,22 @@ from portakal_app.data.models import DatasetHandle, build_data_domain
 class CreateInstanceService:
     def create(
         self,
-        dataset: DatasetHandle,
+        reference: DatasetHandle | None = None,
+        data: DatasetHandle | None = None,
         *,
         values: dict[str, object],
         append_to_data: bool = False,
-    ) -> DatasetHandle:
-        df = dataset.dataframe
+    ) -> DatasetHandle | None:
+        
+        schema_ds = reference if reference is not None else data
+        if schema_ds is None:
+            return None
+
+        df_schema = schema_ds.dataframe
 
         row_data: dict[str, list] = {}
-        for col_name in df.columns:
-            series = df.get_column(col_name)
+        for col_name in df_schema.columns:
+            series = df_schema.get_column(col_name)
             if col_name in values:
                 val = values[col_name]
                 try:
@@ -31,24 +38,32 @@ class CreateInstanceService:
             else:
                 row_data[col_name] = [None]
 
-        new_row = pl.DataFrame(row_data, schema={c: df.get_column(c).dtype for c in df.columns})
+        schema = {c: df_schema.get_column(c).dtype for c in df_schema.columns}
+        new_row = pl.DataFrame(row_data, schema=schema)
 
-        if append_to_data:
-            result = pl.concat([df, new_row], how="vertical_relaxed")
+        if append_to_data and data is not None:
+            # We must ensure data matches the schema of new_row before vertical concat
+            try:
+                result = pl.concat([data.dataframe, new_row], how="vertical_relaxed")
+            except Exception:
+                result = new_row
         else:
             result = new_row
 
+        base_id = data.dataset_id if data else schema_ds.dataset_id
+        base_name = data.display_name if data else schema_ds.display_name
+
         return replace(
-            dataset,
-            dataset_id=f"{dataset.dataset_id}-instance",
-            display_name=f"{dataset.display_name} (instance)",
+            schema_ds,
+            dataset_id=f"{base_id}-instance",
+            display_name=f"{base_name} (instance)",
             dataframe=result,
             row_count=result.height,
             column_count=result.width,
             domain=build_data_domain(result),
         )
 
-    def get_defaults(self, dataset: DatasetHandle) -> dict[str, str]:
+    def get_defaults(self, dataset: DatasetHandle, stat_type: str = "median") -> dict[str, str]:
         defaults: dict[str, str] = {}
         for col in dataset.domain.columns:
             series = dataset.dataframe.get_column(col.name)
@@ -56,10 +71,25 @@ class CreateInstanceService:
             if non_null.len() == 0:
                 defaults[col.name] = ""
                 continue
+            
             if series.dtype.is_numeric():
-                median = non_null.median()
-                defaults[col.name] = str(median) if median is not None else ""
+                if stat_type == "mean":
+                    val = non_null.mean()
+                elif stat_type == "random":
+                    # Simple random choice or uniform
+                    mn, mx = non_null.min(), non_null.max()
+                    val = random.uniform(mn, mx) if mn is not None and mx is not None else None
+                else:
+                    val = non_null.median()
+                defaults[col.name] = str(val) if val is not None else ""
             else:
-                mode = non_null.mode()
-                defaults[col.name] = str(mode[0]) if mode.len() > 0 else ""
+                # Mode for categoricals
+                if stat_type == "random":
+                    unique_vals = non_null.unique().to_list()
+                    val = random.choice(unique_vals) if unique_vals else None
+                else:
+                    mode_res = non_null.mode()
+                    val = mode_res[0] if mode_res.len() > 0 else None
+                defaults[col.name] = str(val) if val is not None else ""
+                
         return defaults

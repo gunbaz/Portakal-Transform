@@ -29,3 +29,13 @@ class WorkflowNodeScreenSupport:
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return None
+
+    def current_output_datasets(self) -> dict[str, DatasetHandle | None] | None:
+        """Return outputs keyed by port id (e.g. ``{"out-1": ds, "out-2": ds2}``).
+
+        Widgets with a single output port can ignore this method; the runtime
+        will fall back to :meth:`current_output_dataset`.  Widgets with
+        multiple output ports should override this to provide a dataset per
+        port.
+        """
+        return None

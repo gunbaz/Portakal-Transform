@@ -8,8 +8,10 @@ from portakal_app.data.models import DatasetHandle, build_data_domain
 
 
 AGGREGATIONS = (
-    "Mean", "Median", "Min", "Max", "Sum", "Count",
-    "First", "Last", "Std", "Variance", "Mode",
+    "Mean", "Median", "Q1", "Q3", "Min. value", "Max. value", "Mode",
+    "Standard deviation", "Variance", "Sum", "Concatenate", "Span",
+    "First value", "Last value", "Random value", "Count defined", "Count",
+    "Proportion defined",
 )
 
 
@@ -56,28 +58,52 @@ class GroupByService:
 
 
 def _build_agg_expr(col_name: str, agg: str) -> pl.Expr | None:
-    alias = f"{col_name}_{agg.lower()}"
+    # Use lowercase, replace spaces and dots for alias
+    safe_agg_name = agg.lower().replace(" ", "_").replace(".", "")
+    alias = f"{col_name}_{safe_agg_name}"
     col = pl.col(col_name)
+    
     if agg == "Mean":
         return col.mean().alias(alias)
     if agg == "Median":
         return col.median().alias(alias)
-    if agg == "Min":
+    if agg == "Q1":
+        return col.quantile(0.25).alias(alias)
+    if agg == "Q3":
+        return col.quantile(0.75).alias(alias)
+    if agg == "Min. value":
         return col.min().alias(alias)
-    if agg == "Max":
+    if agg == "Max. value":
         return col.max().alias(alias)
-    if agg == "Sum":
-        return col.sum().alias(alias)
-    if agg == "Count":
-        return col.count().alias(alias)
-    if agg == "First":
-        return col.first().alias(alias)
-    if agg == "Last":
-        return col.last().alias(alias)
-    if agg == "Std":
+    if agg == "Mode":
+        return col.drop_nulls().mode().first().alias(alias)
+    if agg == "Standard deviation":
         return col.std().alias(alias)
     if agg == "Variance":
         return col.var().alias(alias)
-    if agg == "Mode":
-        return col.mode().first().alias(alias)
+    if agg == "Sum":
+        return col.sum().alias(alias)
+    if agg == "Concatenate":
+        # Convert all to string, drop nulls, and join with space
+        return col.drop_nulls().cast(pl.String).str.join(" ").alias(alias)
+    if agg == "Span":
+        # Max minus Min
+        return (col.max() - col.min()).alias(alias)
+    if agg == "First value":
+        return col.first().alias(alias)
+    if agg == "Last value":
+        return col.last().alias(alias)
+    if agg == "Random value":
+        # Shuffle with a fixed seed and take the first item
+        return col.shuffle(seed=0).first().alias(alias)
+    if agg == "Count defined":
+        # Count non-nulls
+        return col.count().alias(alias)
+    if agg == "Count":
+        # Count all (includes nulls)
+        return pl.len().alias(alias)
+    if agg == "Proportion defined":
+        # Percentage of non-nulls
+        return (col.count() / pl.len()).alias(alias)
+    
     return None

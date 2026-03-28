@@ -200,8 +200,10 @@ def build_widgets() -> list[WidgetDefinition]:
             SelectByIndexScreen,
             i18n.t("Match rows by index subset."),
             "index",
-            _inputs("Data", "Data Subset"),
+            _inputs("Data"),
             _outputs("Data"),
+            output_channels=("Matching Data", "Non-matching Data"),
+            input_channels=("Data", "Data Subset"),
         ),
         WidgetDefinition(
             "randomize",
@@ -244,8 +246,9 @@ def build_widgets() -> list[WidgetDefinition]:
             ApplyDomainScreen,
             i18n.t("Apply template domain structure."),
             "domain",
-            _inputs("Data", "Template Data"),
+            _inputs("Data"),
             _outputs("Data"),
+            input_channels=("Data", "Template Data"),
         ),
         # --- Transform: Placeholder widgets (to be implemented) ---
         WidgetDefinition(
@@ -258,6 +261,7 @@ def build_widgets() -> list[WidgetDefinition]:
             "sampler",
             _inputs("Data"),
             _outputs("Data"),
+            output_channels=("Data Sample", "Remaining Data"),
         ),
         WidgetDefinition(
             "select-columns",
@@ -279,7 +283,8 @@ def build_widgets() -> list[WidgetDefinition]:
             i18n.t("Filter rows by conditions."),
             "rows",
             _inputs("Data"),
-            _outputs("Matching Data", "Unmatched Data"),
+            _outputs("Data"),
+            output_channels=("Matching Data", "Unmatched Data"),
         ),
         WidgetDefinition(
             "transpose",
@@ -432,8 +437,9 @@ def build_widgets() -> list[WidgetDefinition]:
             CreateInstanceScreen,
             i18n.t("Create a single data instance."),
             "createinstance",
-            _inputs("Data", "Reference"),
+            _inputs("Data"),
             _outputs("Data"),
+            input_channels=("Data", "Reference"),
         ),
         WidgetDefinition(
             "formula",

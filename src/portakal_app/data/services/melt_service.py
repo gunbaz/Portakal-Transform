@@ -13,7 +13,7 @@ class MeltService:
         dataset: DatasetHandle,
         *,
         id_column: str | None = None,
-        exclude_numeric: bool = False,
+        ignore_non_numeric: bool = True,
         exclude_zeros: bool = False,
         item_name: str = "item",
         value_name: str = "value",
@@ -26,8 +26,8 @@ class MeltService:
 
         value_vars = [c for c in df.columns if c not in id_vars]
 
-        if exclude_numeric:
-            value_vars = [c for c in value_vars if not df.get_column(c).dtype.is_numeric()]
+        if ignore_non_numeric:
+            value_vars = [c for c in value_vars if df.get_column(c).dtype.is_numeric()]
 
         if not value_vars:
             return dataset

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.pivot_table_service import PIVOT_AGGREGATIONS, PivotTableService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui.shared.type_icons import type_badge_icon
 
 
 class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
@@ -91,10 +92,10 @@ class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
         if dataset:
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
             for col in dataset.domain.columns:
-                self._row_combo.addItem(col.name)
-                self._col_combo.addItem(col.name)
-                if col.logical_type == "numeric":
-                    self._val_combo.addItem(col.name)
+                icon = type_badge_icon(col.logical_type)
+                self._row_combo.addItem(icon, col.name)
+                self._col_combo.addItem(icon, col.name)
+                self._val_combo.addItem(icon, col.name)
         else:
             self._dataset_label.setText("Dataset: none")
             self._result_label.setText("")

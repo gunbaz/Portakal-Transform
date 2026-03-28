@@ -216,9 +216,9 @@ def build_data_domain(dataframe: pl.DataFrame) -> DataDomain:
     for name in dataframe.columns:
         series = dataframe.get_column(name)
         dtype_repr = str(series.dtype)
-        logical_type = _infer_logical_type(series)
         null_count = int(series.null_count())
         unique_count = _safe_unique_count(series)
+        logical_type = _infer_logical_type(series, unique_count)
         sample_values = _sample_values(series)
         columns.append(
             ColumnSchema(
@@ -260,7 +260,7 @@ def _infer_target_index(columns: list[ColumnSchema]) -> int | None:
     return candidates[-1]
 
 
-def _infer_logical_type(series: pl.Series) -> str:
+def _infer_logical_type(series: pl.Series, unique_count: int) -> str:
     dtype_name = str(series.dtype).lower()
     if "bool" in dtype_name:
         return "boolean"
@@ -273,21 +273,22 @@ def _infer_logical_type(series: pl.Series) -> str:
     if "duration" in dtype_name:
         return "duration"
     if any(token in dtype_name for token in ("int", "float", "decimal")):
+        if "int" in dtype_name and 0 < unique_count <= LOW_CARDINALITY_LIMIT:
+            return "categorical"
         return "numeric"
     if dtype_name in {"categorical", "enum"}:
         return "categorical"
     if dtype_name in {"string", "str", "utf8"}:
-        return _infer_string_like_type(series)
+        return _infer_string_like_type(series, unique_count)
     return "unknown"
 
 
-def _infer_string_like_type(series: pl.Series) -> str:
+def _infer_string_like_type(series: pl.Series, unique_count: int) -> str:
     values = [str(value).strip() for value in series.drop_nulls().head(128).to_list() if str(value).strip()]
     if not values:
         return "text"
     if all(_looks_like_datetime(value) for value in values[:8]):
         return "datetime"
-    unique_count = len({value for value in values})
     if unique_count <= max(LOW_CARDINALITY_LIMIT, len(values) // 3):
         return "categorical"
     return "text"

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.aggregate_columns_service import OPERATIONS, AggregateColumnsService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui.shared.type_icons import type_badge_icon
 
 
 class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
@@ -80,6 +81,8 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
 
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
+        if payload is not None and dataset is self._dataset_handle:
+            return
         self._dataset_handle = dataset
         self._output_dataset = None
         self._column_list.clear()
@@ -88,7 +91,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
             for col in dataset.domain.columns:
                 if col.logical_type == "numeric":
-                    item = QListWidgetItem(col.name)
+                    item = QListWidgetItem(type_badge_icon(col.logical_type), col.name)
                     item.setSelected(True)
                     self._column_list.addItem(item)
         else:
@@ -147,7 +150,10 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             output_name=self._output_name.text() or "agg",
         )
 
+        in_count = self._dataset_handle.row_count
+        out_count = self._output_dataset.row_count if self._output_dataset else 0
         self._result_label.setText(
-            f"{self._op_combo.currentText()} of {len(selected)} column(s) -> '{self._output_name.text()}'"
+            f"{self._op_combo.currentText()} of {len(selected)} column(s) -> '{self._output_name.text()}'  |  "
+            f"Input: {in_count} rows  |  Output: {out_count} rows"
         )
         self._notify_output_changed()

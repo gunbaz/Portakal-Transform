@@ -166,6 +166,15 @@ def test_file_import_service_load_from_url_falls_back_to_venv_kaggle_cli(monkeyp
     expected_cli = str(Path(sys.executable).with_name("kaggle.exe"))
     monkeypatch.setattr("portakal_app.data.services.file_import_service.which", lambda _name: None)
 
+    _orig_exists = Path.exists
+
+    def _fake_exists(self):
+        if self == Path(sys.executable).with_name("kaggle.exe"):
+            return True
+        return _orig_exists(self)
+
+    monkeypatch.setattr(Path, "exists", _fake_exists)
+
     def fake_run(command, *, capture_output, text, check, env=None):
         commands.append(command)
         target_index = command.index("-p") + 1

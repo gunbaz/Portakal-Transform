@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import math
-import operator
 from dataclasses import replace
 
 import polars as pl
 
 from portakal_app.data.models import DatasetHandle, build_data_domain
 
-# Safe built-in functions available in formula expressions
 _SAFE_BUILTINS = {
     "abs": abs,
     "round": round,
@@ -44,26 +42,20 @@ class FormulaService:
         self,
         dataset: DatasetHandle,
         *,
-        formulas: list[tuple[str, str]],
+        formulas: list[dict[str, object]],
     ) -> DatasetHandle:
-        """Apply a list of (column_name, expression_string) formulas to the dataset.
-
-        Each expression is evaluated as a Polars expression using the existing columns.
-        Supported patterns:
-          - Column references: col_name (directly by name)
-          - Arithmetic: +, -, *, /, //, %, **
-          - Math functions: sqrt, log, sin, cos, etc.
-          - Comparisons: >, <, >=, <=, ==, !=
-          - String concatenation with +
-        """
         df = dataset.dataframe
 
         if not formulas:
             return dataset
 
-        for col_name, expr_str in formulas:
-            col_name = col_name.strip()
-            expr_str = expr_str.strip()
+        for formula in formulas:
+            col_name = str(formula.get("name", "")).strip()
+            expr_str = str(formula.get("expr", "")).strip()
+            # is_meta isn't natively supported in standard polars without custom metadata,
+            # but we parse it for forward compatibility and to match UI payload.
+            is_meta = bool(formula.get("is_meta", False))
+
             if not col_name or not expr_str:
                 continue
             try:
@@ -84,28 +76,20 @@ class FormulaService:
 
 
 def _parse_formula(expr_str: str, columns: list[str]) -> pl.Expr:
-    """Parse a formula string into a Polars expression.
-
-    Uses a safe eval approach with only column references and math operations.
-    """
     namespace: dict = {}
     namespace.update(_SAFE_BUILTINS)
     namespace.update(_SAFE_MATH)
 
-    # Add polars column references
     for col_name in columns:
         safe_name = col_name.replace(" ", "_").replace("-", "_")
         namespace[safe_name] = pl.col(col_name)
-        # Also allow original name if different
         if safe_name != col_name:
             namespace[col_name] = pl.col(col_name)
 
-    # Add polars utility
     namespace["col"] = pl.col
     namespace["lit"] = pl.lit
     namespace["when"] = pl.when
 
-    # Restrict to safe operations
     namespace["__builtins__"] = {}
 
     result = eval(expr_str, namespace)  # noqa: S307

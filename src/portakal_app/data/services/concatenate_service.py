@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-
 import polars as pl
-
 from portakal_app.data.models import DatasetHandle, build_data_domain
-
-
-MERGE_MODES = ("Union", "Intersection")
-
 
 class ConcatenateService:
     def concatenate(
@@ -16,8 +10,10 @@ class ConcatenateService:
         datasets: list[DatasetHandle],
         *,
         merge_mode: str = "Union",
+        use_primary_names_only: bool = False,
         add_source_column: bool = False,
-        source_column_name: str = "Source",
+        source_column_name: str = "Source ID",
+        source_column_role: str = "feature",
     ) -> DatasetHandle | None:
         if not datasets:
             return None
@@ -26,8 +22,17 @@ class ConcatenateService:
         source_labels: list[str] = []
 
         for ds in datasets:
-            dfs.append(ds.dataframe)
+            dfs.append(ds.dataframe.clone())
             source_labels.append(ds.display_name)
+
+        if use_primary_names_only and len(dfs) > 1:
+            primary_cols = dfs[0].columns
+            for i in range(1, len(dfs)):
+                new_cols = {}
+                for j, col in enumerate(dfs[i].columns):
+                    if j < len(primary_cols):
+                        new_cols[col] = primary_cols[j]
+                dfs[i] = dfs[i].rename(new_cols)
 
         if merge_mode == "Intersection":
             common_cols = set(dfs[0].columns)
@@ -59,8 +64,18 @@ class ConcatenateService:
             dfs = tagged
 
         result = pl.concat(dfs, how="vertical_relaxed")
-
         base = datasets[0]
+        domain = build_data_domain(result)
+
+        if add_source_column and source_column_role != "feature":
+            new_domain_cols = []
+            for col in domain.columns:
+                if col.name == source_column_name:
+                    new_domain_cols.append(replace(col, role=source_column_role))
+                else:
+                    new_domain_cols.append(col)
+            domain = replace(domain, columns=tuple(new_domain_cols))
+
         return replace(
             base,
             dataset_id=f"{base.dataset_id}-concatenated",
@@ -68,5 +83,5 @@ class ConcatenateService:
             dataframe=result,
             row_count=result.height,
             column_count=result.width,
-            domain=build_data_domain(result),
+            domain=domain,
         )

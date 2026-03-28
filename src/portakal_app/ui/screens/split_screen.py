@@ -1,19 +1,57 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PySide6.QtCore import Qt, QRectF
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.split_service import OUTPUT_TYPES, SplitService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+
+def _create_type_icon(logical_type: str) -> QIcon:
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    if logical_type == "numeric":
+        color = QColor("#ef4444")
+        text = "N"
+    elif logical_type in ("categorical", "boolean"):
+        color = QColor("#22c55e")
+        text = "C"
+    elif logical_type in ("text", "string"):
+        color = QColor("#8b5cf6")
+        text = "S"
+    elif logical_type in ("datetime", "date", "time"):
+        color = QColor("#3b82f6")
+        text = "D"
+    else:
+        color = QColor("#6b7280")
+        text = "?"
+
+    painter.setBrush(color)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawRoundedRect(0, 0, 16, 16, 3, 3)
+    
+    painter.setPen(QColor("white"))
+    font = QFont("Arial", 9, QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(QRectF(0, 0, 16, 16), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    
+    return QIcon(pixmap)
 
 
 class SplitScreen(QWidget, WorkflowNodeScreenSupport):
@@ -33,34 +71,47 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        settings_group = QGroupBox("Split Settings")
-        settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(10, 10, 10, 10)
-        settings_layout.setSpacing(8)
+        # Variable Group
+        var_group = QGroupBox("Variable")
+        var_layout = QVBoxLayout(var_group)
+        var_layout.setContentsMargins(10, 10, 10, 10)
+        var_layout.setSpacing(8)
 
-        col_row = QHBoxLayout()
-        col_row.addWidget(QLabel("Column:"))
         self._column_combo = QComboBox()
-        col_row.addWidget(self._column_combo, 1)
-        settings_layout.addLayout(col_row)
+        var_layout.addWidget(self._column_combo)
 
         delim_row = QHBoxLayout()
         delim_row.addWidget(QLabel("Delimiter:"))
         self._delimiter_edit = QLineEdit(";")
-        self._delimiter_edit.setMaximumWidth(60)
+        self._delimiter_edit.setMaximumWidth(40)
         delim_row.addWidget(self._delimiter_edit)
         delim_row.addStretch(1)
-        settings_layout.addLayout(delim_row)
+        var_layout.addLayout(delim_row)
 
-        type_row = QHBoxLayout()
-        type_row.addWidget(QLabel("Output type:"))
-        self._type_combo = QComboBox()
-        self._type_combo.addItems(list(OUTPUT_TYPES))
-        self._type_combo.setCurrentText("Numerical (0, 1)")
-        type_row.addWidget(self._type_combo, 1)
-        settings_layout.addLayout(type_row)
+        layout.addWidget(var_group)
 
-        layout.addWidget(settings_group)
+        # Output Values Group
+        out_group = QGroupBox("Output Values")
+        out_layout = QVBoxLayout(out_group)
+        out_layout.setContentsMargins(10, 10, 10, 10)
+        out_layout.setSpacing(6)
+
+        self._type_group = QButtonGroup(self)
+        
+        self._radio_cat = QRadioButton("Categorical (No, Yes)")
+        self._radio_num = QRadioButton("Numerical (0, 1)")
+        self._radio_counts = QRadioButton("Counts")
+        
+        self._type_group.addButton(self._radio_cat, 0)
+        self._type_group.addButton(self._radio_num, 1)
+        self._type_group.addButton(self._radio_counts, 2)
+        
+        out_layout.addWidget(self._radio_cat)
+        out_layout.addWidget(self._radio_num)
+        out_layout.addWidget(self._radio_counts)
+        self._radio_num.setChecked(True)
+
+        layout.addWidget(out_group)
 
         self._result_label = QLabel("")
         self._result_label.setWordWrap(True)
@@ -86,7 +137,7 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
             for col in dataset.domain.columns:
                 if col.logical_type in ("text", "categorical"):
-                    self._column_combo.addItem(col.name)
+                    self._column_combo.addItem(_create_type_icon(col.logical_type), col.name)
         else:
             self._dataset_label.setText("Dataset: none")
             self._result_label.setText("")
@@ -98,8 +149,17 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "column": self._column_combo.currentText(),
             "delimiter": self._delimiter_edit.text(),
-            "output_type": self._type_combo.currentText(),
+            "output_type": self._get_selected_type(),
         }
+        
+    def _get_selected_type(self) -> str:
+        if self._radio_cat.isChecked():
+            return "Categorical (No, Yes)"
+        if self._radio_num.isChecked():
+            return "Numerical (0, 1)"
+        if self._radio_counts.isChecked():
+            return "Counts"
+        return "Numerical (0, 1)"
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
         col = str(payload.get("column", ""))
@@ -107,8 +167,13 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             self._column_combo.setCurrentText(col)
         self._delimiter_edit.setText(str(payload.get("delimiter", ";")))
         ot = str(payload.get("output_type", "Numerical (0, 1)"))
-        if self._type_combo.findText(ot) >= 0:
-            self._type_combo.setCurrentText(ot)
+        
+        if ot == "Categorical (No, Yes)":
+            self._radio_cat.setChecked(True)
+        elif ot == "Counts":
+            self._radio_counts.setChecked(True)
+        else:
+            self._radio_num.setChecked(True)
 
     def help_text(self) -> str:
         return "Split a string column by a delimiter and create indicator columns for each unique value."
@@ -127,7 +192,7 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_handle,
             column_name=self._column_combo.currentText(),
             delimiter=self._delimiter_edit.text() or ";",
-            output_type=self._type_combo.currentText(),
+            output_type=self._get_selected_type(),
         )
 
         new_cols = self._output_dataset.column_count - self._dataset_handle.column_count

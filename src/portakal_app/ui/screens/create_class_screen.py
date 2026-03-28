@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -10,31 +11,36 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QScrollArea,
 )
+from PySide6.QtCore import Qt
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.create_class_service import CreateClassService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
-
+from portakal_app.ui import i18n
 
 class _RuleRow(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        self.layout_hbox = QHBoxLayout(self)
+        self.layout_hbox.setContentsMargins(0, 0, 0, 0)
+        self.layout_hbox.setSpacing(6)
+
+        self.remove_btn = QPushButton("×")
+        self.remove_btn.setFixedWidth(24)
+        self.layout_hbox.addWidget(self.remove_btn)
 
         self.label_edit = QLineEdit()
-        self.label_edit.setPlaceholderText("Class label")
-        layout.addWidget(self.label_edit, 1)
+        self.layout_hbox.addWidget(self.label_edit, 1)
 
         self.pattern_edit = QLineEdit()
-        self.pattern_edit.setPlaceholderText("Pattern / substring")
-        layout.addWidget(self.pattern_edit, 1)
+        self.layout_hbox.addWidget(self.pattern_edit, 1)
 
-        self.remove_btn = QPushButton("x")
-        self.remove_btn.setFixedWidth(30)
-        layout.addWidget(self.remove_btn)
+        self.count_label = QLabel("")
+        self.count_label.setFixedWidth(40)
+        self.count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.layout_hbox.addWidget(self.count_label)
 
     def get_rule(self) -> tuple[str, str]:
         return (self.label_edit.text(), self.pattern_edit.text())
@@ -53,78 +59,131 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
+        # "Dataset: " display for Workflow node compat
         self._dataset_label = QLabel("Dataset: none")
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        source_group = QGroupBox("Source")
-        source_layout = QVBoxLayout(source_group)
-        source_layout.setContentsMargins(10, 10, 10, 10)
-        source_layout.setSpacing(8)
-
-        src_row = QHBoxLayout()
-        src_row.addWidget(QLabel("Column:"))
-        self._source_combo = QComboBox()
-        src_row.addWidget(self._source_combo, 1)
-        source_layout.addLayout(src_row)
-
-        name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Class name:"))
+        # 1. New Class Name group
+        name_group = QGroupBox("New Class Name")
+        name_layout = QVBoxLayout(name_group)
+        name_layout.setContentsMargins(10, 10, 10, 10)
         self._class_name = QLineEdit("class")
-        name_row.addWidget(self._class_name, 1)
-        source_layout.addLayout(name_row)
+        name_layout.addWidget(self._class_name)
+        layout.addWidget(name_group)
 
-        opts_row = QHBoxLayout()
-        self._case_sensitive = QCheckBox("Case sensitive")
-        self._use_regex = QCheckBox("Regular expressions")
-        self._match_beginning = QCheckBox("Match beginning")
-        opts_row.addWidget(self._case_sensitive)
-        opts_row.addWidget(self._use_regex)
-        opts_row.addWidget(self._match_beginning)
-        source_layout.addLayout(opts_row)
+        # 2. Match by Substring group
+        match_group = QGroupBox("Match by Substring")
+        match_layout = QVBoxLayout(match_group)
+        match_layout.setContentsMargins(10, 10, 10, 10)
+        
+        src_row = QHBoxLayout()
+        src_row.addWidget(QLabel("From column:"))
+        self._source_combo = QComboBox()
+        self._source_combo.currentIndexChanged.connect(self._check_apply)
+        src_row.addWidget(self._source_combo, 1)
+        match_layout.addLayout(src_row)
+        
+        # Grid Headers
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 5, 0, 5)
+        # spacer for x button
+        spacer = QLabel("")
+        spacer.setFixedWidth(24)
+        header_row.addWidget(spacer)
+        
+        name_lbl = QLabel("Name")
+        header_row.addWidget(name_lbl, 1)
+        sub_lbl = QLabel("Substring")
+        header_row.addWidget(sub_lbl, 1)
+        count_lbl = QLabel("Count")
+        count_lbl.setFixedWidth(40)
+        count_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        header_row.addWidget(count_lbl)
+        
+        match_layout.addLayout(header_row)
 
-        layout.addWidget(source_group)
-
-        rules_group = QGroupBox("Rules (label -> pattern)")
-        self._rules_layout = QVBoxLayout(rules_group)
-        self._rules_layout.setContentsMargins(10, 10, 10, 10)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._rules_container = QWidget()
+        self._rules_layout = QVBoxLayout(self._rules_container)
+        self._rules_layout.setContentsMargins(0, 0, 0, 0)
         self._rules_layout.setSpacing(6)
-        layout.addWidget(rules_group, 1)
-
-        btn_row = QHBoxLayout()
-        self._add_btn = QPushButton("+ Add Rule")
+        scroll.setWidget(self._rules_container)
+        match_layout.addWidget(scroll, 1)
+        
+        add_btn_layout = QHBoxLayout()
+        add_btn_layout.addStretch(1)
+        self._add_btn = QPushButton("+")
+        self._add_btn.setFixedWidth(30)
         self._add_btn.clicked.connect(self._add_rule)
-        btn_row.addWidget(self._add_btn)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
+        add_btn_layout.addWidget(self._add_btn)
+        match_layout.addLayout(add_btn_layout)
+        
+        layout.addWidget(match_group, 1)
+
+        # 3. Options Group
+        opts_group = QGroupBox("Options")
+        opts_layout = QVBoxLayout(opts_group)
+        opts_layout.setContentsMargins(10, 10, 10, 10)
+        
+        self._use_regex = QCheckBox("Use regular expressions")
+        self._use_regex.stateChanged.connect(self._check_apply)
+        opts_layout.addWidget(self._use_regex)
+        
+        self._match_beginning = QCheckBox("Match only at the beginning")
+        self._match_beginning.stateChanged.connect(self._check_apply)
+        opts_layout.addWidget(self._match_beginning)
+        
+        self._case_sensitive = QCheckBox("Case sensitive")
+        self._case_sensitive.stateChanged.connect(self._check_apply)
+        opts_layout.addWidget(self._case_sensitive)
+        
+        layout.addWidget(opts_group)
 
         self._result_label = QLabel("")
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
-        footer = QHBoxLayout()
-        footer.addStretch(1)
+        # Apply Button (Full width in Orange)
         self._apply_button = QPushButton("Apply")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
-        footer.addWidget(self._apply_button)
-        layout.addLayout(footer)
+        layout.addWidget(self._apply_button)
+        
+        # Add 2 initial empty rules to mimic Oranges initialization screenshot
+        self._add_rule()
+        self._add_rule()
 
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
         self._dataset_handle = dataset
         self._output_dataset = None
+        self._source_combo.blockSignals(True)
         self._source_combo.clear()
 
         if dataset:
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
             for col in dataset.domain.columns:
-                if col.logical_type in ("text", "categorical"):
-                    self._source_combo.addItem(col.name)
+                type_label = col.logical_type
+                if type_label == "numeric":
+                    type_label = "Num"
+                elif type_label == "categorical":
+                    type_label = "Cat"
+                elif type_label == "text":
+                    type_label = "Txt"
+                elif type_label == "datetime":
+                    type_label = "Time"
+                self._source_combo.addItem(f"{col.name} ({type_label})", userData=col.name)
         else:
             self._dataset_label.setText("Dataset: none")
             self._result_label.setText("")
+
+        self._source_combo.blockSignals(False)
+
+    def _check_apply(self) -> None:
+        pass
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -132,7 +191,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
     def serialize_node_state(self) -> dict[str, object]:
         rules = [row.get_rule() for row in self._rule_rows]
         return {
-            "source": self._source_combo.currentText(),
+            "source": self._source_combo.currentData(),
             "class_name": self._class_name.text(),
             "case_sensitive": self._case_sensitive.isChecked(),
             "use_regex": self._use_regex.isChecked(),
@@ -141,10 +200,30 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
-        pass
+        src_name = payload.get("source")
+        if src_name:
+             for i in range(self._source_combo.count()):
+                 if self._source_combo.itemData(i) == src_name:
+                     self._source_combo.setCurrentIndex(i)
+                     break
+        
+        self._class_name.setText(str(payload.get("class_name", "class")))
+        self._case_sensitive.setChecked(bool(payload.get("case_sensitive", False)))
+        self._use_regex.setChecked(bool(payload.get("use_regex", False)))
+        self._match_beginning.setChecked(bool(payload.get("match_beginning", False)))
+
+        rules = payload.get("rules", [])
+        if rules:
+            for row in list(self._rule_rows):
+                self._remove_rule(row)
+            for lbl, pat in rules:
+                self._add_rule()
+                r = self._rule_rows[-1]
+                r.label_edit.setText(str(lbl))
+                r.pattern_edit.setText(str(pat))
 
     def help_text(self) -> str:
-        return "Create a new class column based on pattern matching rules applied to a string column."
+        return "Create a new categorical class/target feature by slicing values based on substrings or regular expressions."
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/createclass/"
@@ -152,6 +231,9 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
     def _add_rule(self) -> None:
         row = _RuleRow(self)
         row.remove_btn.clicked.connect(lambda: self._remove_rule(row))
+        # Trigger re-eval when text edited only if auto-update is desired
+        # row.label_edit.textEdited.connect(self._check_apply)
+        # row.pattern_edit.textEdited.connect(self._check_apply)
         self._rule_rows.append(row)
         self._rules_layout.addWidget(row)
 
@@ -160,28 +242,46 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             self._rule_rows.remove(row)
             self._rules_layout.removeWidget(row)
             row.deleteLater()
+            self._check_apply()
 
     def _apply(self) -> None:
-        if self._dataset_handle is None or not self._source_combo.currentText():
+        if self._dataset_handle is None or self._source_combo.count() == 0:
             self._output_dataset = None
             self._result_label.setText("")
             self._notify_output_changed()
             return
 
+        source_col = self._source_combo.currentData()
         rules = [row.get_rule() for row in self._rule_rows if row.pattern_edit.text()]
 
-        self._output_dataset = self._service.create_class(
-            self._dataset_handle,
-            source_column=self._source_combo.currentText(),
-            rules=rules,
-            class_name=self._class_name.text() or "class",
-            case_sensitive=self._case_sensitive.isChecked(),
-            use_regex=self._use_regex.isChecked(),
-            match_beginning=self._match_beginning.isChecked(),
-        )
+        try:
+            self._output_dataset, counts = self._service.create_class(
+                self._dataset_handle,
+                source_column=str(source_col),
+                rules=rules,
+                class_name=self._class_name.text() or "class",
+                case_sensitive=self._case_sensitive.isChecked(),
+                use_regex=self._use_regex.isChecked(),
+                match_beginning=self._match_beginning.isChecked(),
+            )
+            
+            # Update counts on rows
+            valid_idx = 0
+            for row in self._rule_rows:
+                if row.pattern_edit.text():
+                    row.count_label.setText(str(counts.get(valid_idx, 0)))
+                    valid_idx += 1
+                else:
+                    row.count_label.setText("")
 
-        unique_classes = self._output_dataset.dataframe.get_column(
-            self._class_name.text() or "class"
-        ).n_unique()
-        self._result_label.setText(f"Created '{self._class_name.text()}' with {unique_classes} classes")
+            unique_classes = self._output_dataset.dataframe.get_column(
+                self._class_name.text() or "class"
+            ).n_unique()
+            self._result_label.setText(f"Created '{self._class_name.text()}' with {unique_classes} matching categories")
+        except Exception as e:
+            self._output_dataset = None
+            self._result_label.setText(f"Error mapping class: {e}")
+            for row in self._rule_rows:
+                row.count_label.setText("")
+
         self._notify_output_changed()

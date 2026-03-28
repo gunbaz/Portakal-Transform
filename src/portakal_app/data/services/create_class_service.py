@@ -19,22 +19,26 @@ class CreateClassService:
         case_sensitive: bool = False,
         use_regex: bool = False,
         match_beginning: bool = False,
-    ) -> DatasetHandle:
+    ) -> tuple[DatasetHandle, dict[int, int]]:
         df = dataset.dataframe
 
         if source_column not in df.columns:
-            return dataset
+            return dataset, {}
 
         source = df.get_column(source_column).cast(pl.Utf8).fill_null("")
         values = source.to_list()
         class_values: list[str | None] = [None] * len(values)
+        
+        # Keep track of counts by rule index
+        counts: dict[int, int] = {i: 0 for i in range(len(rules))}
 
-        for label, pattern in rules:
-            for i, val in enumerate(values):
+        for i, val in enumerate(values):
+            for rule_idx, (label, pattern) in enumerate(rules):
                 if class_values[i] is not None:
                     continue
                 if _matches(val, pattern, case_sensitive, use_regex, match_beginning):
                     class_values[i] = label
+                    counts[rule_idx] += 1
 
         for i, v in enumerate(class_values):
             if v is None:
@@ -57,7 +61,7 @@ class CreateClassService:
                     sample_values=col.sample_values,
                 )
 
-        return replace(
+        new_dataset = replace(
             dataset,
             dataset_id=f"{dataset.dataset_id}-classed",
             display_name=f"{dataset.display_name} (class created)",
@@ -66,6 +70,7 @@ class CreateClassService:
             column_count=result_df.width,
             domain=DataDomain(columns=tuple(new_columns)),
         )
+        return new_dataset, counts
 
 
 def _matches(value: str, pattern: str, case_sensitive: bool, use_regex: bool, match_beginning: bool) -> bool:

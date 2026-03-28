@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.unique_service import TIEBREAKERS, UniqueService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui.shared.type_icons import type_badge_icon
 
 
 class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
@@ -79,7 +80,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         if dataset:
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
             for col in dataset.domain.columns:
-                item = QListWidgetItem(col.name)
+                item = QListWidgetItem(type_badge_icon(col.logical_type), col.name)
                 item.setSelected(True)
                 self._column_list.addItem(item)
         else:

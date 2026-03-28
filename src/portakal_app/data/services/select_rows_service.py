@@ -7,10 +7,9 @@ import polars as pl
 from portakal_app.data.models import DatasetHandle, build_data_domain
 
 
-OPERATORS_NUMERIC = ("=", "!=", "<", "<=", ">", ">=", "is defined", "is not defined")
-OPERATORS_STRING = ("equals", "not equals", "contains", "does not contain", "starts with", "ends with", "is defined", "is not defined")
-OPERATORS_CATEGORICAL = ("is", "is not", "is defined", "is not defined")
-
+OPERATORS_NUMERIC = ("==", "!=", "<", "<=", ">", ">=", "is defined", "is not defined")
+OPERATORS_STRING = ("==", "!=", "contains", "does not contain", "starts with", "ends with", "is defined", "is not defined")
+OPERATORS_CATEGORICAL = ("==", "!=", "is defined", "is not defined")
 
 class SelectRowsService:
     def filter_rows(
@@ -74,7 +73,7 @@ def _apply_condition(df: pl.DataFrame, col_name: str, operator: str, value: str)
         except (ValueError, TypeError):
             return pl.Series("m", [True] * n)
         float_series = series.cast(pl.Float64, strict=False)
-        if operator == "=":
+        if operator in ("=", "=="):
             return float_series == num_val
         if operator == "!=":
             return float_series != num_val
@@ -88,7 +87,7 @@ def _apply_condition(df: pl.DataFrame, col_name: str, operator: str, value: str)
             return float_series >= num_val
 
     str_series = series.cast(pl.Utf8, strict=False).fill_null("")
-    if operator in ("equals", "is", "="):
+    if operator in ("equals", "is", "=", "=="):
         return str_series == value
     if operator in ("not equals", "is not", "!="):
         return str_series != value

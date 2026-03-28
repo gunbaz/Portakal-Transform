@@ -21,7 +21,8 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         self._service = SelectByIndexService()
         self._dataset_handle: DatasetHandle | None = None
         self._subset_handle: DatasetHandle | None = None
-        self._output_dataset: DatasetHandle | None = None
+        self._output_matching: DatasetHandle | None = None
+        self._output_non_matching: DatasetHandle | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -38,8 +39,11 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         info_layout.setSpacing(8)
 
         self._desc_label = QLabel(
-            "Select rows from Data that match the indices present in Data Subset.\n\n"
-            "Connect a 'Data' source and a 'Data Subset' source to filter rows by index."
+            "Data rows keep their identity even when some or all original variables "
+            "are replaced by variables computed from the original ones.\n\n"
+            "This widget gets two data tables (\"Data\" and \"Data Subset\") that "
+            "can be traced back to the same source. It selects all rows from Data "
+            "that appear in Data Subset, based on row identity and not actual data."
         )
         self._desc_label.setWordWrap(True)
         info_layout.addWidget(self._desc_label)
@@ -50,7 +54,7 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         self._subset_info = QLabel("Data Subset: -")
         info_layout.addWidget(self._subset_info)
 
-        self._result_info = QLabel("Matching: -  |  Non-matching: -")
+        self._result_info = QLabel("Matching: -  |  Non-matching: -  |  Total: -")
         info_layout.addWidget(self._result_info)
 
         layout.addWidget(info_group)
@@ -73,9 +77,18 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         elif payload.port_label == "Data Subset":
             self._subset_handle = payload.dataset
         self._update_info()
+        # Auto-apply when both inputs are available
+        if self._dataset_handle is not None and self._subset_handle is not None:
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
-        return self._output_dataset
+        return self._output_matching
+
+    def current_output_datasets(self) -> dict[str, DatasetHandle | None] | None:
+        return {
+            "Matching Data": self._output_matching,
+            "Non-matching Data": self._output_non_matching,
+        }
 
     def serialize_node_state(self) -> dict[str, object]:
         return {}
@@ -104,15 +117,18 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _apply(self) -> None:
         if self._dataset_handle is None or self._subset_handle is None:
-            self._output_dataset = None
-            self._result_info.setText("Matching: -  |  Non-matching: -")
+            self._output_matching = None
+            self._output_non_matching = None
+            self._result_info.setText("Matching: -  |  Non-matching: -  |  Total: -")
             self._notify_output_changed()
             return
 
         matching, non_matching = self._service.select(self._dataset_handle, self._subset_handle)
-        self._output_dataset = matching
+        self._output_matching = matching
+        self._output_non_matching = non_matching
 
         m_count = matching.row_count if matching else 0
         nm_count = non_matching.row_count if non_matching else 0
-        self._result_info.setText(f"Matching: {m_count}  |  Non-matching: {nm_count}")
+        total = self._dataset_handle.row_count
+        self._result_info.setText(f"Matching: {m_count}  |  Non-matching: {nm_count}  |  Total: {total}")
         self._notify_output_changed()

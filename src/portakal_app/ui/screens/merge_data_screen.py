@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -11,10 +12,78 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PySide6.QtCore import Qt, QRectF, QSize
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.merge_data_service import JOIN_TYPES, MergeDataService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+
+def _create_type_icon(logical_type: str) -> QIcon:
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    if logical_type == "numeric":
+        color = QColor("#ef4444")
+        text = "N"
+    elif logical_type in ("categorical", "boolean"):
+        color = QColor("#22c55e")
+        text = "C"
+    elif logical_type in ("text", "string"):
+        color = QColor("#8b5cf6")
+        text = "S"
+    elif logical_type in ("datetime", "date", "time"):
+        color = QColor("#3b82f6")
+        text = "D"
+    else:
+        color = QColor("#6b7280")
+        text = "?"
+
+    painter.setBrush(color)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawRoundedRect(0, 0, 16, 16, 3, 3)
+    
+    painter.setPen(QColor("white"))
+    font = QFont("Arial", 9, QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(QRectF(0, 0, 16, 16), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    
+    return QIcon(pixmap)
+
+
+class MatchRow:
+    def __init__(self, parent_screen: MergeDataScreen, left_text: str = "", right_text: str = ""):
+        self.parent_screen = parent_screen
+        self.widget = QWidget()
+        layout = QHBoxLayout(self.widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.left_combo = QComboBox()
+        self.left_combo.setIconSize(QSize(16, 16))
+        layout.addWidget(self.left_combo, 1)
+        
+        layout.addWidget(QLabel("matches"))
+        
+        self.right_combo = QComboBox()
+        self.right_combo.setIconSize(QSize(16, 16))
+        layout.addWidget(self.right_combo, 1)
+        
+        self.del_btn = QPushButton("x")
+        self.del_btn.setFixedSize(24, 24)
+        layout.addWidget(self.del_btn)
+        
+        parent_screen._populate_combo(self.left_combo, parent_screen._dataset_handle)
+        parent_screen._populate_combo(self.right_combo, parent_screen._extra_handle)
+        
+        if left_text and self.left_combo.findText(left_text) >= 0:
+            self.left_combo.setCurrentText(left_text)
+        if right_text and self.right_combo.findText(right_text) >= 0:
+            self.right_combo.setCurrentText(right_text)
+            
+        self.del_btn.clicked.connect(lambda: parent_screen._remove_match_row(self))
 
 
 class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
@@ -25,6 +94,8 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_handle: DatasetHandle | None = None
         self._extra_handle: DatasetHandle | None = None
         self._output_dataset: DatasetHandle | None = None
+        
+        self._match_rows: list[MatchRow] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -35,36 +106,45 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        match_group = QGroupBox("Match Columns")
-        match_layout = QVBoxLayout(match_group)
-        match_layout.setContentsMargins(10, 10, 10, 10)
-        match_layout.setSpacing(8)
-
-        left_row = QHBoxLayout()
-        left_row.addWidget(QLabel("Data column:"))
-        self._left_combo = QComboBox()
-        left_row.addWidget(self._left_combo, 1)
-        match_layout.addLayout(left_row)
-
-        right_row = QHBoxLayout()
-        right_row.addWidget(QLabel("Extra column:"))
-        self._right_combo = QComboBox()
-        right_row.addWidget(self._right_combo, 1)
-        match_layout.addLayout(right_row)
-        layout.addWidget(match_group)
-
-        join_group = QGroupBox("Join Type")
-        join_layout = QVBoxLayout(join_group)
-        join_layout.setContentsMargins(10, 10, 10, 10)
-        join_layout.setSpacing(6)
+        options_layout = QVBoxLayout()
+        options_layout.setSpacing(6)
+        
         self._join_group = QButtonGroup(self)
-        for i, jt in enumerate(JOIN_TYPES):
-            rb = QRadioButton(jt)
-            if i == 0:
-                rb.setChecked(True)
-            self._join_group.addButton(rb, i)
-            join_layout.addWidget(rb)
-        layout.addWidget(join_group)
+        
+        self._radio_left = QRadioButton("Append columns from Extra Data")
+        self._radio_inner = QRadioButton("Find matching pairs of rows")
+        self._radio_outer = QRadioButton("Concatenate tables")
+        
+        self._radio_left.setChecked(True)
+        
+        self._join_group.addButton(self._radio_left, 0)
+        self._join_group.addButton(self._radio_inner, 1)
+        self._join_group.addButton(self._radio_outer, 2)
+        
+        options_layout.addWidget(self._radio_left)
+        options_layout.addWidget(self._radio_inner)
+        options_layout.addWidget(self._radio_outer)
+        
+        layout.addLayout(options_layout)
+
+        match_group = QGroupBox("Row matching")
+        match_group_layout = QVBoxLayout(match_group)
+        match_group_layout.setContentsMargins(10, 10, 10, 10)
+        match_group_layout.setSpacing(5)
+
+        self._matches_layout = QVBoxLayout()
+        self._matches_layout.setSpacing(5)
+        match_group_layout.addLayout(self._matches_layout)
+
+        plus_layout = QHBoxLayout()
+        plus_layout.addStretch(1)
+        self._add_match_btn = QPushButton("+")
+        self._add_match_btn.setFixedSize(24, 24)
+        self._add_match_btn.clicked.connect(lambda: self._add_match_row())
+        plus_layout.addWidget(self._add_match_btn)
+        match_group_layout.addLayout(plus_layout)
+
+        layout.addWidget(match_group)
 
         self._data_info = QLabel("Data: -  |  Extra: -")
         layout.addWidget(self._data_info)
@@ -77,11 +157,14 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Merge")
+        self._apply_button = QPushButton("MERGE")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+        
+        # Initialize with one empty row
+        self._add_match_row()
 
     def set_input_payload(self, payload) -> None:
         if payload is None:
@@ -91,50 +174,87 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_handle = payload.dataset
         elif payload.port_label == "Extra Data":
             self._extra_handle = payload.dataset
-        self._update_combos()
+        self._update_all_combos()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
+        left_cols = [row.left_combo.currentText() for row in self._match_rows if row.left_combo.currentText()]
+        right_cols = [row.right_combo.currentText() for row in self._match_rows if row.right_combo.currentText()]
+        
         return {
-            "left_on": self._left_combo.currentText(),
-            "right_on": self._right_combo.currentText(),
+            "left_on": json.dumps(left_cols),
+            "right_on": json.dumps(right_cols),
             "join_type": self._join_group.checkedId(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
-        lo = str(payload.get("left_on", ""))
-        if lo and self._left_combo.findText(lo) >= 0:
-            self._left_combo.setCurrentText(lo)
-        ro = str(payload.get("right_on", ""))
-        if ro and self._right_combo.findText(ro) >= 0:
-            self._right_combo.setCurrentText(ro)
+        try:
+            left_cols = json.loads(str(payload.get("left_on", "[]")))
+            right_cols = json.loads(str(payload.get("right_on", "[]")))
+            if not isinstance(left_cols, list): left_cols = []
+            if not isinstance(right_cols, list): right_cols = []
+        except Exception:
+            left_cols = []
+            right_cols = []
+            
+        # Rebuild rows to match state length
+        while len(self._match_rows) > 0:
+            self._remove_match_row(self._match_rows[0], force=True)
+            
+        # Create new rows
+        num_rows = max(1, len(left_cols))
+        for i in range(num_rows):
+            lt = left_cols[i] if i < len(left_cols) else ""
+            rt = right_cols[i] if i < len(right_cols) else ""
+            self._add_match_row(lt, rt)
+
         jt = int(payload.get("join_type", 0))
         btn = self._join_group.button(jt)
         if btn:
             btn.setChecked(True)
 
     def help_text(self) -> str:
-        return "Merge two datasets by matching column values (left, inner, or outer join)."
+        return "Merge two datasets by matching one or more column pairs (left, inner, or outer join)."
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/mergedata/"
 
-    def _update_combos(self) -> None:
-        self._left_combo.clear()
-        self._right_combo.clear()
+    def _populate_combo(self, combo: QComboBox, dataset: DatasetHandle | None):
+        combo.clear()
+        if not dataset:
+            return
+        combo.addItem(QIcon(), "Row index")
+        for col in dataset.domain.columns:
+            combo.addItem(_create_type_icon(col.logical_type), col.name)
+            
+    def _add_match_row(self, left_text="", right_text=""):
+        row = MatchRow(self, left_text, right_text)
+        self._match_rows.append(row)
+        self._matches_layout.addWidget(row.widget)
+        
+    def _remove_match_row(self, row, force=False):
+        if len(self._match_rows) <= 1 and not force:
+            return
+        self._match_rows.remove(row)
+        row.widget.deleteLater()
 
+    def _update_all_combos(self) -> None:
         if self._dataset_handle:
             self._dataset_label.setText(f"Data: {self._dataset_handle.display_name}")
-            for col in self._dataset_handle.domain.columns:
-                self._left_combo.addItem(col.name)
         else:
             self._dataset_label.setText("Data: none")
 
-        if self._extra_handle:
-            for col in self._extra_handle.domain.columns:
-                self._right_combo.addItem(col.name)
+        for row in self._match_rows:
+            lt = row.left_combo.currentText()
+            rt = row.right_combo.currentText()
+            self._populate_combo(row.left_combo, self._dataset_handle)
+            self._populate_combo(row.right_combo, self._extra_handle)
+            if lt and row.left_combo.findText(lt) >= 0:
+                row.left_combo.setCurrentText(lt)
+            if rt and row.right_combo.findText(rt) >= 0:
+                row.right_combo.setCurrentText(rt)
 
         d_info = f"{self._dataset_handle.row_count}r" if self._dataset_handle else "-"
         e_info = f"{self._extra_handle.row_count}r" if self._extra_handle else "-"
@@ -146,19 +266,36 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
             self._notify_output_changed()
             return
+            
+        left_on = []
+        right_on = []
+        for row in self._match_rows:
+            lt = row.left_combo.currentText()
+            rt = row.right_combo.currentText()
+            if lt and rt:
+                left_on.append(lt)
+                right_on.append(rt)
+                
+        if not left_on:
+            self._result_label.setText("Please select valid columns to match.")
+            return
 
         join_types = {0: "Left Join", 1: "Inner Join", 2: "Outer Join"}
         jt = join_types.get(self._join_group.checkedId(), "Left Join")
 
-        self._output_dataset = self._service.merge(
-            self._dataset_handle,
-            self._extra_handle,
-            left_on=self._left_combo.currentText(),
-            right_on=self._right_combo.currentText(),
-            join_type=jt,
-        )
-
-        self._result_label.setText(
-            f"Result: {self._output_dataset.row_count} rows x {self._output_dataset.column_count} columns"
-        )
+        try:
+            self._output_dataset = self._service.merge(
+                self._dataset_handle,
+                self._extra_handle,
+                left_on=left_on,
+                right_on=right_on,
+                join_type=jt,
+            )
+            self._result_label.setText(
+                f"Result: {self._output_dataset.row_count} rows x {self._output_dataset.column_count} columns"
+            )
+        except Exception as e:
+            self._result_label.setText(f"Merge Error: {str(e)}")
+            self._output_dataset = None
+            
         self._notify_output_changed()

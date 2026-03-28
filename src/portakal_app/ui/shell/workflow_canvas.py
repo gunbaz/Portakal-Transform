@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import QPointF, QRectF, QSize, QSizeF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPainterPathStroker, QPen, QTextCursor, QTransform
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QGraphicsItem,
     QGraphicsObject,
@@ -13,11 +15,73 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsTextItem,
     QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QRadioButton,
+    QVBoxLayout,
     QWidget,
 )
 
 from portakal_app.models import PortDefinition, WidgetDefinition, workflow_ports_are_compatible
 from portakal_app.ui.icons import get_widget_icon
+
+
+class ChannelSelectionDialog(QDialog):
+    """Orange-style dialog for selecting which output channel to send through a cable."""
+
+    def __init__(
+        self,
+        source_label: str,
+        target_label: str,
+        channels: tuple[str, ...],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setModal(True)
+        self.setMinimumWidth(340)
+        self._selected_channel = channels[0]
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(f"<b>Edit Links</b>")
+        layout.addWidget(title)
+
+        header = QHBoxLayout()
+        header.addWidget(QLabel(f"<b>{source_label}</b>"))
+        header.addStretch(1)
+        header.addWidget(QLabel(f"<b>{target_label}</b>"))
+        layout.addLayout(header)
+
+        self._radios: list[QRadioButton] = []
+        for i, ch in enumerate(channels):
+            radio = QRadioButton(ch)
+            if i == 0:
+                radio.setChecked(True)
+            radio.toggled.connect(lambda checked, c=ch: self._on_toggled(checked, c))
+            self._radios.append(radio)
+            layout.addWidget(radio)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.setStyleSheet("""
+            ChannelSelectionDialog {
+                background: #faf6f0;
+                border: 1px solid #c8bfb0;
+                border-radius: 8px;
+            }
+        """)
+
+    def _on_toggled(self, checked: bool, channel: str) -> None:
+        if checked:
+            self._selected_channel = channel
+
+    def selected_channel(self) -> str:
+        return self._selected_channel
 
 
 @dataclass(frozen=True)
@@ -42,14 +106,23 @@ class WorkflowEdgeItem(QGraphicsPathItem):
         source_port_id: str,
         target_item: "WorkflowNodeItem",
         target_port_id: str,
+        channel: str = "",
+        input_channel: str = "",
     ) -> None:
         super().__init__()
         self.source_item = source_item
         self.source_port_id = source_port_id
         self.target_item = target_item
         self.target_port_id = target_port_id
+        self.channel = channel
+        self.input_channel = input_channel
         self.setFlags(QGraphicsPathItem.GraphicsItemFlag.ItemIsSelectable)
         self.setZValue(0)
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(QColor("#7e8ea0"))
+        font = self._label_item.font()
+        font.setPointSizeF(7.0)
+        self._label_item.setFont(font)
         self.update_path()
 
     def update_path(self) -> None:
@@ -60,6 +133,25 @@ class WorkflowEdgeItem(QGraphicsPathItem):
         path.cubicTo(source.x() + delta, source.y(), target.x() - delta, target.y(), target.x(), target.y())
         self.setPath(path)
         self._sync_pen()
+        self._update_label()
+
+    def _update_label(self) -> None:
+        parts: list[str] = []
+        if self.channel:
+            parts.append(self.channel)
+        if self.input_channel:
+            if parts:
+                parts.append("→")
+            parts.append(self.input_channel)
+        label_text = " ".join(parts)
+        self._label_item.setPlainText(label_text)
+        if label_text:
+            mid = self.path().pointAtPercent(0.5)
+            br = self._label_item.boundingRect()
+            self._label_item.setPos(mid.x() - br.width() / 2, mid.y() - br.height() - 2)
+            self._label_item.show()
+        else:
+            self._label_item.hide()
 
     def _sync_pen(self) -> None:
         color = QColor("#7e8ea0") if self.isSelected() else QColor("#9aa8b5")
@@ -74,6 +166,52 @@ class WorkflowEdgeItem(QGraphicsPathItem):
         if change == QGraphicsPathItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._sync_pen()
         return super().itemChange(change, value)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        scene = self.scene()
+        if not hasattr(scene, "views") or not scene.views(): # type: ignore
+            super().mouseDoubleClickEvent(event)
+            return
+
+        parent_widget = scene.views()[0] # type: ignore
+        changed = False
+
+        channels = self.source_item.widget_definition.output_channels
+        if channels and len(channels) > 1:
+            dialog = ChannelSelectionDialog(
+                self.source_item.display_label,
+                self.target_item.display_label,
+                channels,
+                parent=parent_widget,
+            )
+            for radio in dialog._radios:
+                if radio.text() == self.channel:
+                    radio.setChecked(True)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.channel = dialog.selected_channel()
+                changed = True
+
+        in_channels = self.target_item.widget_definition.input_channels
+        if in_channels and len(in_channels) > 1:
+            dialog = ChannelSelectionDialog(
+                self.source_item.display_label,
+                self.target_item.display_label,
+                in_channels,
+                parent=parent_widget,
+            )
+            for radio in dialog._radios:
+                if radio.text() == self.input_channel:
+                    radio.setChecked(True)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.input_channel = dialog.selected_channel()
+                changed = True
+
+        if changed:
+            if hasattr(scene, "_notify_workflow_changed"):
+                scene._notify_workflow_changed() # type: ignore
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
 
 class WorkflowPreviewEdgeItem(QGraphicsPathItem):
@@ -668,6 +806,8 @@ class WorkflowScene(QGraphicsScene):
         target_node_id: str,
         source_port_id: str | None = None,
         target_port_id: str | None = None,
+        channel: str = "",
+        input_channel: str = "",
         emit_status: bool = True,
     ) -> bool:
         source_node = self._nodes[source_node_id]
@@ -687,7 +827,9 @@ class WorkflowScene(QGraphicsScene):
 
         source_ref = WorkflowPortRef(source_node_id, source_node.widget_definition.id, "output", source_port_id)
         target_ref = WorkflowPortRef(target_node_id, target_node.widget_definition.id, "input", target_port_id)
-        success, message = self._create_connection_from_refs(source_ref, target_ref)
+        success, message = self._create_connection_from_refs(
+            source_ref, target_ref, channel=channel, input_channel=input_channel,
+        )
         if emit_status:
             self.statusMessage.emit(message)
         return success
@@ -718,7 +860,53 @@ class WorkflowScene(QGraphicsScene):
             self.statusMessage.emit("Connection cancelled.")
             self._clear_pending_connection()
             return False
-        success, message = self._create_connection_from_refs(self._pending_output, target_port)
+
+        source_node = self._nodes[self._pending_output.node_id]
+        target_node = self._nodes[target_port.node_id]
+        parent_widget = self.views()[0] if self.views() else None
+        channel = ""
+        input_channel = ""
+
+        channels = source_node.widget_definition.output_channels
+        if channels and len(channels) > 1:
+            dialog = ChannelSelectionDialog(
+                source_node.display_label,
+                target_node.display_label,
+                channels,
+                parent=parent_widget,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                self.statusMessage.emit("Connection cancelled.")
+                self._clear_pending_connection()
+                return False
+            channel = dialog.selected_channel()
+
+        in_channels = target_node.widget_definition.input_channels
+        if in_channels and len(in_channels) > 1:
+            used = self._used_input_channels(target_port.node_id, target_port.port_id)
+            available = tuple(ch for ch in in_channels if ch not in used)
+            if not available:
+                self.statusMessage.emit("All input channels are already connected.")
+                self._clear_pending_connection()
+                return False
+            if len(available) == 1:
+                input_channel = available[0]
+            else:
+                dialog = ChannelSelectionDialog(
+                    source_node.display_label,
+                    target_node.display_label,
+                    available,
+                    parent=parent_widget,
+                )
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    self.statusMessage.emit("Connection cancelled.")
+                    self._clear_pending_connection()
+                    return False
+                input_channel = dialog.selected_channel()
+
+        success, message = self._create_connection_from_refs(
+            self._pending_output, target_port, channel=channel, input_channel=input_channel,
+        )
         self.statusMessage.emit(message)
         self._clear_pending_connection()
         return success
@@ -757,6 +945,8 @@ class WorkflowScene(QGraphicsScene):
                     "source_port_id": edge.source_port_id,
                     "target_node_id": edge.target_item.node_id,
                     "target_port_id": edge.target_port_id,
+                    "channel": edge.channel,
+                    "input_channel": edge.input_channel,
                 }
                 for edge in self._edges
             ],
@@ -781,6 +971,8 @@ class WorkflowScene(QGraphicsScene):
                     str(edge_data["target_node_id"]),
                     source_port_id=str(edge_data["source_port_id"]),
                     target_port_id=str(edge_data["target_port_id"]),
+                    channel=str(edge_data.get("channel") or ""),
+                    input_channel=str(edge_data.get("input_channel") or ""),
                     emit_status=False,
                 )
             for annotation_data in snapshot.get("annotations", []):
@@ -846,6 +1038,8 @@ class WorkflowScene(QGraphicsScene):
                     "source_port_id": edge.source_port_id,
                     "target_node_id": edge.target_item.node_id,
                     "target_port_id": edge.target_port_id,
+                    "channel": edge.channel,
+                    "input_channel": edge.input_channel,
                 }
                 for edge in selected_edges
             ],
@@ -881,6 +1075,8 @@ class WorkflowScene(QGraphicsScene):
                         target_id,
                         source_port_id=str(edge_data["source_port_id"]),
                         target_port_id=str(edge_data["target_port_id"]),
+                        channel=str(edge_data.get("channel") or ""),
+                        input_channel=str(edge_data.get("input_channel") or ""),
                         emit_status=False,
                     )
             for annotation_data in annotations:
@@ -913,14 +1109,31 @@ class WorkflowScene(QGraphicsScene):
         self._clear_pending_connection()
         self.statusMessage.emit(message)
 
-    def _create_connection_from_refs(self, source_ref: WorkflowPortRef, target_ref: WorkflowPortRef) -> tuple[bool, str]:
+    def _create_connection_from_refs(
+        self, source_ref: WorkflowPortRef, target_ref: WorkflowPortRef,
+        channel: str = "", input_channel: str = "",
+    ) -> tuple[bool, str]:
         valid, message = self._validate_connection(source_ref, target_ref)
         if not valid:
             return False, message
 
         source_node = self._nodes[source_ref.node_id]
         target_node = self._nodes[target_ref.node_id]
-        edge = WorkflowEdgeItem(source_node, source_ref.port_id, target_node, target_ref.port_id)
+
+        if not channel:
+            channels = source_node.widget_definition.output_channels
+            if channels:
+                channel = channels[0]
+
+        if not input_channel:
+            in_channels = target_node.widget_definition.input_channels
+            if in_channels:
+                input_channel = in_channels[0]
+
+        edge = WorkflowEdgeItem(
+            source_node, source_ref.port_id, target_node, target_ref.port_id,
+            channel=channel, input_channel=input_channel,
+        )
         source_node.add_edge(edge)
         target_node.add_edge(edge)
         self.addItem(edge)
@@ -948,13 +1161,27 @@ class WorkflowScene(QGraphicsScene):
         edge_key = (source_ref.node_id, source_ref.port_id, target_ref.node_id, target_ref.port_id)
         if edge_key in self._edge_keys:
             return False, "These ports are already connected."
-        if (target_ref.node_id, target_ref.port_id) in self._occupied_inputs:
+        target_node = self._nodes.get(target_ref.node_id)
+        has_input_channels = target_node is not None and len(target_node.widget_definition.input_channels) > 1
+        if (target_ref.node_id, target_ref.port_id) in self._occupied_inputs and not has_input_channels:
             return False, "That input port is already connected."
+        if has_input_channels:
+            used_channels = self._used_input_channels(target_ref.node_id, target_ref.port_id)
+            available = set(target_node.widget_definition.input_channels) - used_channels
+            if not available:
+                return False, "All input channels are already connected."
         source_label = self._port_label(source_ref)
         target_label = self._port_label(target_ref)
         if not workflow_ports_are_compatible(source_ref.widget_id, source_label, target_ref.widget_id, target_label):
             return False, f"Port types do not match: {source_label} cannot connect to {target_label}."
         return True, "Connection created."
+
+    def _used_input_channels(self, node_id: str, port_id: str) -> set[str]:
+        used: set[str] = set()
+        for edge in self._edges:
+            if edge.target_item.node_id == node_id and edge.target_port_id == port_id and edge.input_channel:
+                used.add(edge.input_channel)
+        return used
 
     def _port_exists(self, port_ref: WorkflowPortRef) -> bool:
         node = self._nodes.get(port_ref.node_id)

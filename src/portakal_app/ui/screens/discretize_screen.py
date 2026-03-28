@@ -1,19 +1,225 @@
 from __future__ import annotations
 
+from typing import Any
 from PySide6.QtWidgets import (
-    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
+    QListWidget,
+    QRadioButton,
+    QButtonGroup,
+    QListWidgetItem,
+    QCheckBox,
+    QSplitter,
+    QSpinBox,
+    QLineEdit,
+    QComboBox,
 )
+from PySide6.QtCore import Qt
 
 from portakal_app.data.models import DatasetHandle
-from portakal_app.data.services.discretize_service import METHODS, DiscretizeService
+from portakal_app.data.services.discretize_service import (
+    METHODS,
+    DiscretizeService,
+)
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui import i18n
+
+
+class DiscretizeConfigurator(QGroupBox):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("Discretize Settings", parent)
+        self.methods = METHODS
+        
+        self.preset_method = "Keep numeric"
+        self.overrides: dict[str, dict[str, object]] = {}
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Left Panel (List)
+        self.list_widget = QListWidget()
+        self.list_widget.currentRowChanged.connect(self._on_list_change)
+        layout.addWidget(self.list_widget, 4)
+        
+        # Right Panel (Radio Buttons + Inputs)
+        right_panel = QVBoxLayout()
+        self.group = QButtonGroup(self)
+        self.radio_buttons: list[QRadioButton] = []
+        
+        # Mapping index to widgets
+        self.widgets: dict[int, dict[str, Any]] = {}
+
+        def add_rb(index: int, method_name: str, has_spinbox=False, spinbox_default=2, has_edit=False, edit_default="", edit_label="", has_time=False):
+            row = QHBoxLayout()
+            rb = QRadioButton(method_name)
+            self.group.addButton(rb, index)
+            self.radio_buttons.append(rb)
+            row.addWidget(rb)
+            
+            w_dict = {}
+            if has_spinbox:
+                sb = QSpinBox()
+                sb.setRange(2, 50)
+                sb.setValue(spinbox_default)
+                sb.setEnabled(False)
+                row.addWidget(sb)
+                w_dict["spin"] = sb
+                
+            if has_edit:
+                ed = QLineEdit(edit_default)
+                ed.setEnabled(False)
+                row.addWidget(ed)
+                w_dict["edit"] = ed
+                if edit_label:
+                    row.addWidget(QLabel(edit_label))
+                    
+            if has_time:
+                cb = QComboBox()
+                cb.addItems(["year(s)", "month(s)", "week(s)", "day(s)", "hour(s)", "minute(s)", "second(s)"])
+                cb.setEnabled(False)
+                row.addWidget(cb)
+                w_dict["combo"] = cb
+                
+            row.addStretch()
+            right_panel.addLayout(row)
+            self.widgets[index] = w_dict
+            rb.clicked.connect(self._on_radio_change)
+            if "spin" in w_dict: w_dict["spin"].valueChanged.connect(self._on_value_change)
+            if "edit" in w_dict: w_dict["edit"].textChanged.connect(self._on_value_change)
+
+        # Build UI to exactly match Orange
+        add_rb(0, "Keep numeric")
+        add_rb(1, "Remove")
+        add_rb(2, "Natural binning, desired bins:", has_spinbox=True, spinbox_default=2)
+        add_rb(3, "Fixed width:", has_edit=True, edit_default="1.0")
+        add_rb(4, "Time interval:", has_edit=True, edit_default="1", has_time=True)
+        add_rb(5, "Equal frequency, intervals:", has_spinbox=True, spinbox_default=2)
+        add_rb(6, "Equal width, intervals:", has_spinbox=True, spinbox_default=2)
+        add_rb(7, "Entropy vs. MDL")
+        add_rb(8, "Custom:", has_edit=True, edit_default="", edit_label="e.g. 0.0, 0.5, 1.0")
+        add_rb(9, "Use default setting")
+        
+        right_panel.addStretch(1)
+        layout.addLayout(right_panel, 6)
+        
+        self.group.buttonClicked.connect(self._update_widget_enabled_states)
+        self._populate_list([])
+
+    def _update_widget_enabled_states(self):
+        checked_id = self.group.checkedId()
+        for idx, controls in self.widgets.items():
+            is_enabled = (idx == checked_id)
+            if "spin" in controls: controls["spin"].setEnabled(is_enabled)
+            if "edit" in controls: controls["edit"].setEnabled(is_enabled)
+            if "combo" in controls: controls["combo"].setEnabled(is_enabled)
+
+    def _populate_list(self, cols: list[str]) -> None:
+        self.list_widget.clear()
+        
+        preset_item = QListWidgetItem(f"★ Default setting: {self.preset_method}")
+        preset_item.setData(Qt.ItemDataRole.UserRole, "__PRESET__")
+        self.list_widget.addItem(preset_item)
+        
+        for col in cols:
+            item = QListWidgetItem(col)
+            item.setData(Qt.ItemDataRole.UserRole, col)
+            self.list_widget.addItem(item)
+            
+        self.list_widget.setCurrentRow(0)
+
+    def _on_list_change(self, row: int) -> None:
+        if row < 0:
+            return
+            
+        item = self.list_widget.item(row)
+        col_id = item.data(Qt.ItemDataRole.UserRole)
+        
+        if col_id == "__PRESET__":
+            self.radio_buttons[-1].setEnabled(False) # 'Use default setting' impossible for default
+            method = self.preset_method
+            conf = self.overrides.get("__PRESET__", {})
+        else:
+            self.radio_buttons[-1].setEnabled(True)
+            conf = self.overrides.get(col_id, {})
+            method = conf.get("method", "Use default setting")
+            
+        try:
+            # Map clean names via lambda
+            idx = 0
+            for i, rb in enumerate(self.radio_buttons):
+                if rb.text().startswith(method) or method.startswith(rb.text().split(",")[0]):
+                    idx = i
+                    break
+            self.radio_buttons[idx].setChecked(True)
+            
+            # Restore inputs
+            w_dict = self.widgets.get(idx, {})
+            if "spin" in w_dict and "n_bins" in conf:
+                w_dict["spin"].blockSignals(True)
+                w_dict["spin"].setValue(int(conf["n_bins"]))
+                w_dict["spin"].blockSignals(False)
+            if "edit" in w_dict:
+                w_dict["edit"].blockSignals(True)
+                if idx == 3 and "width" in conf:
+                   w_dict["edit"].setText(str(conf["width"]))
+                elif idx == 8 and "cuts" in conf:
+                   w_dict["edit"].setText(str(conf["cuts"]))
+                w_dict["edit"].blockSignals(False)
+                
+            self._update_widget_enabled_states()
+        except ValueError:
+            pass
+
+    def _on_radio_change(self) -> None:
+        self._on_value_change()
+
+    def _on_value_change(self) -> None:
+        row = self.list_widget.currentRow()
+        if row < 0:
+            return
+            
+        item = self.list_widget.item(row)
+        col_id = item.data(Qt.ItemDataRole.UserRole)
+        method_idx = self.group.checkedId()
+        if method_idx < 0:
+            return
+            
+        # Extract method string mapping back from UI
+        method = METHODS[method_idx]
+        
+        conf = {"method": method}
+        w_dict = self.widgets.get(method_idx, {})
+        if "spin" in w_dict:
+            conf["n_bins"] = w_dict["spin"].value()
+        if "edit" in w_dict:
+            if method_idx == 3:
+               conf["width"] = w_dict["edit"].text()
+            elif method_idx == 8:
+               conf["cuts"] = w_dict["edit"].text()
+               
+        if col_id == "__PRESET__":
+            if method == "Use default setting":
+                self.radio_buttons[0].setChecked(True) # Force Keep numeric
+                self._on_value_change()
+                return
+            self.preset_method = method
+            item.setText(f"★ Default setting: {method}")
+            self.overrides["__PRESET__"] = conf
+        else:
+            if method == "Use default setting":
+                if col_id in self.overrides:
+                    del self.overrides[col_id]
+            else:
+                self.overrides[col_id] = conf
+
+    def reset_all(self):
+        self.overrides.clear()
+        self.list_widget.setCurrentRow(0)
+        self._on_list_change(0)
 
 
 class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
@@ -33,82 +239,77 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        settings_group = QGroupBox("Discretization Settings")
-        settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(10, 10, 10, 10)
-        settings_layout.setSpacing(8)
-
-        method_row = QHBoxLayout()
-        method_row.addWidget(QLabel("Method:"))
-        self._method_combo = QComboBox()
-        self._method_combo.addItems(list(METHODS))
-        self._method_combo.setCurrentText("Equal Width")
-        method_row.addWidget(self._method_combo, 1)
-        settings_layout.addLayout(method_row)
-
-        bins_row = QHBoxLayout()
-        bins_row.addWidget(QLabel("Number of bins:"))
-        self._bins_spin = QSpinBox()
-        self._bins_spin.setRange(2, 50)
-        self._bins_spin.setValue(4)
-        bins_row.addWidget(self._bins_spin)
-        bins_row.addStretch(1)
-        settings_layout.addLayout(bins_row)
-
-        layout.addWidget(settings_group)
-
-        self._info_label = QLabel(
-            "Converts numeric columns into categorical bins.\n"
-            "Equal Width: bins of equal range.\n"
-            "Equal Frequency: bins with equal number of instances.\n"
-            "Remove: drops all numeric columns.\n"
-            "Keep Numeric: no transformation."
-        )
-        self._info_label.setWordWrap(True)
-        self._info_label.setStyleSheet("color: gray;")
-        layout.addWidget(self._info_label)
+        self.configurator = DiscretizeConfigurator(self)
+        layout.addWidget(self.configurator, 1)
 
         self._result_label = QLabel("")
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
-        layout.addStretch(1)
-
         footer = QHBoxLayout()
+        btn_reset = QPushButton("Reset All")
+        btn_reset.clicked.connect(self._reset_all)
+        footer.addWidget(btn_reset)
+        
         footer.addStretch(1)
+        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+        
         self._apply_button = QPushButton("Apply")
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
 
+    def _reset_all(self):
+        self.configurator.reset_all()
+        if self.cb_apply_auto.isChecked():
+            self._apply()
+
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
         self._dataset_handle = dataset
         self._output_dataset = None
+        
         if dataset:
             self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            df = dataset.dataframe
+            num_cols = [c for c in df.columns if df.get_column(c).dtype.is_numeric()]
+            self.configurator._populate_list(num_cols)
         else:
             self._dataset_label.setText("Dataset: none")
             self._result_label.setText("")
+            self.configurator._populate_list([])
+
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
         return {
-            "method": self._method_combo.currentText(),
-            "n_bins": self._bins_spin.value(),
+            "preset_method": self.configurator.preset_method,
+            "overrides": self.configurator.overrides,
+            "auto_apply": self.cb_apply_auto.isChecked()
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
-        m = str(payload.get("method", "Equal Width"))
-        if self._method_combo.findText(m) >= 0:
-            self._method_combo.setCurrentText(m)
-        self._bins_spin.setValue(int(payload.get("n_bins", 4)))
+        self.configurator.preset_method = str(payload.get("preset_method", "Keep numeric"))
+        self.configurator.overrides = payload.get("overrides", {})
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
+
+        if self.configurator.list_widget.count() > 0:
+            self.configurator.list_widget.item(0).setText(f"★ Default setting: {self.configurator.preset_method}")
+
+        self.configurator._on_list_change(self.configurator.list_widget.currentRow())
+
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def help_text(self) -> str:
-        return "Discretize numeric columns into categorical bins using equal width or equal frequency methods."
+        return "Discretize numeric columns into categorical bins using equal width, frequency, custom cuts, or entropy."
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/discretize/"
@@ -119,16 +320,26 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
             self._notify_output_changed()
             return
+            
+        try:
+            # Reconstruct default configuration exactly
+            preset_conf = self.configurator.overrides.get("__PRESET__", {})
+            default_n_bins = int(preset_conf.get("n_bins", 2))
+            
+            clean_overrides = {k: v for k, v in self.configurator.overrides.items() if k != "__PRESET__"}
 
-        self._output_dataset = self._service.discretize(
-            self._dataset_handle,
-            method=self._method_combo.currentText(),
-            n_bins=self._bins_spin.value(),
-        )
+            self._output_dataset = self._service.discretize(
+                self._dataset_handle,
+                default_method=self.configurator.preset_method,
+                default_n_bins=default_n_bins,
+                column_methods=clean_overrides,
+            )
 
-        before = self._dataset_handle.column_count
-        after = self._output_dataset.column_count
-        self._result_label.setText(
-            f"Discretized: {after} columns (was {before}) using {self._method_combo.currentText()}"
-        )
+            before = self._dataset_handle.column_count
+            after = self._output_dataset.column_count
+            self._result_label.setText(f"Result: {after} columns (was {before})")
+        except Exception as e:
+            self._output_dataset = None
+            self._result_label.setText(f"Error: {e}")
+
         self._notify_output_changed()

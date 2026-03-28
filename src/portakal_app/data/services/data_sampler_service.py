@@ -26,10 +26,16 @@ class DataSamplerService:
 
         if mode == "percentage":
             sample_size = max(1, int(n * percentage / 100))
-            indices = _sample_indices(rng, n, sample_size, with_replacement)
+            if stratify:
+                indices = _stratified_sample(rng, dataset, sample_size, with_replacement)
+            else:
+                indices = _sample_indices(rng, n, sample_size, with_replacement)
         elif mode == "fixed":
             sample_size = min(fixed_size, n)
-            indices = _sample_indices(rng, n, sample_size, with_replacement)
+            if stratify:
+                indices = _stratified_sample(rng, dataset, sample_size, with_replacement)
+            else:
+                indices = _sample_indices(rng, n, sample_size, with_replacement)
         elif mode == "cross-validation":
             fold_size = n // folds
             start = (selected_fold - 1) * fold_size
@@ -81,6 +87,34 @@ def _sample_indices(rng: random.Random, n: int, size: int, with_replacement: boo
     if with_replacement:
         return [rng.randint(0, n - 1) for _ in range(size)]
     return rng.sample(range(n), min(size, n))
+
+
+def _stratified_sample(
+    rng: random.Random,
+    dataset: DatasetHandle,
+    sample_size: int,
+    with_replacement: bool,
+) -> list[int]:
+    target_cols = dataset.domain.target_columns if dataset.domain else ()
+    if not target_cols:
+        return _sample_indices(rng, dataset.dataframe.height, sample_size, with_replacement)
+
+    target_name = target_cols[0].name
+    series = dataset.dataframe.get_column(target_name)
+    groups: dict[str, list[int]] = {}
+    for i, val in enumerate(series.to_list()):
+        key = str(val)
+        groups.setdefault(key, []).append(i)
+
+    n = dataset.dataframe.height
+    indices: list[int] = []
+    for group_indices in groups.values():
+        group_size = max(1, round(len(group_indices) / n * sample_size))
+        if with_replacement:
+            indices.extend(rng.choices(group_indices, k=group_size))
+        else:
+            indices.extend(rng.sample(group_indices, min(group_size, len(group_indices))))
+    return indices
 
 
 def _build_pair(
