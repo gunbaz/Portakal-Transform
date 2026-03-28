@@ -36,24 +36,24 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(10)
 
         # Dataset Label
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # Variable Definitions Top Area
-        definitions_group = QGroupBox("Variable Definitions")
+        definitions_group = QGroupBox(i18n.t("Variable Definitions"))
         definitions_layout = QHBoxLayout(definitions_group)
         definitions_layout.setContentsMargins(10, 10, 10, 10)
         definitions_layout.setSpacing(10)
 
         # Left Buttons
         left_btn_layout = QVBoxLayout()
-        self._new_btn = QPushButton("New")
+        self._new_btn = QPushButton(i18n.t("New"))
         self._new_btn.clicked.connect(self._add_new)
         left_btn_layout.addWidget(self._new_btn)
-        
-        self._remove_btn = QPushButton("Remove")
+
+        self._remove_btn = QPushButton(i18n.t("Remove"))
         self._remove_btn.clicked.connect(self._remove_current)
         left_btn_layout.addWidget(self._remove_btn)
         left_btn_layout.addStretch(1)
@@ -63,28 +63,28 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
         right_editor_layout = QVBoxLayout()
         top_row = QHBoxLayout()
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("Name...")
+        self._name_edit.setPlaceholderText(i18n.t("Name..."))
         self._name_edit.textEdited.connect(self._on_editor_changed)
         top_row.addWidget(self._name_edit, 1)
 
         self._expr_edit = QLineEdit()
-        self._expr_edit.setPlaceholderText("Expression...")
+        self._expr_edit.setPlaceholderText(i18n.t("Expression..."))
         self._expr_edit.textEdited.connect(self._on_editor_changed)
         top_row.addWidget(self._expr_edit, 3)
         right_editor_layout.addLayout(top_row)
 
         bottom_row = QHBoxLayout()
-        self._meta_check = QCheckBox("Meta attribute")
+        self._meta_check = QCheckBox(i18n.t("Meta attribute"))
         self._meta_check.stateChanged.connect(self._on_editor_changed)
         bottom_row.addWidget(self._meta_check)
 
         self._col_combo = QComboBox()
-        self._col_combo.addItem("Select Column")
+        self._col_combo.addItem(i18n.t("Select Column"))
         self._col_combo.activated.connect(self._on_col_selected)
         bottom_row.addWidget(self._col_combo, 1)
 
         self._func_combo = QComboBox()
-        self._func_combo.addItem("Select Function")
+        self._func_combo.addItem(i18n.t("Select Function"))
         all_funcs = sorted(list(_SAFE_MATH.keys()) + list(_SAFE_BUILTINS.keys()) + ["col"])
         self._func_combo.addItems(all_funcs)
         self._func_combo.activated.connect(self._on_func_selected)
@@ -106,7 +106,7 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._result_label)
 
         # Bottom Send Button
-        self._apply_button = QPushButton("Send")
+        self._apply_button = QPushButton(i18n.t("Send"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         # To mimic Orange's full width button, we just add it to layout directly
@@ -215,10 +215,10 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
         
         self._col_combo.blockSignals(True)
         self._col_combo.clear()
-        self._col_combo.addItem("Select Column")
+        self._col_combo.addItem(i18n.t("Select Column"))
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 type_label = col.logical_type
                 if type_label == "numeric":
@@ -231,7 +231,7 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
                     type_label = "Time"
                 self._col_combo.addItem(f"{col.name} ({type_label})", userData=col.name)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
             
         self._col_combo.blockSignals(False)
@@ -269,6 +269,22 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/featureconstructor/"
 
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        if self._output_dataset is not None and self._dataset_handle is not None:
+            formulas = [f for f in self._formula_data if f.get("name") and f.get("expr")]
+            new_cols = self._output_dataset.column_count - self._dataset_handle.column_count
+            self._result_label.setText(
+                i18n.tf(
+                    "Applied {count} formula(s). New columns: {new_cols}. Output: {rows}r x {cols}c",
+                    count=len(formulas), new_cols=new_cols,
+                    rows=self._output_dataset.row_count, cols=self._output_dataset.column_count,
+                )
+            )
+
     def _apply(self) -> None:
         if self._dataset_handle is None:
             self._output_dataset = None
@@ -286,11 +302,14 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
             
             new_cols = self._output_dataset.column_count - self._dataset_handle.column_count
             self._result_label.setText(
-                f"Applied {len(formulas)} formula(s). New columns: {new_cols}. "
-                f"Output: {self._output_dataset.row_count}r x {self._output_dataset.column_count}c"
+                i18n.tf(
+                    "Applied {count} formula(s). New columns: {new_cols}. Output: {rows}r x {cols}c",
+                    count=len(formulas), new_cols=new_cols,
+                    rows=self._output_dataset.row_count, cols=self._output_dataset.column_count,
+                )
             )
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Formula Error: {e}")
+            self._result_label.setText(i18n.tf("Formula Error: {error}", error=e))
 
         self._notify_output_changed()

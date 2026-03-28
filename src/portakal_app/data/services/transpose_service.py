@@ -15,27 +15,41 @@ class TransposeService:
         feature_names_from: str | None = None,
         feature_name_prefix: str = "Feature",
         auto_column_name: str = "column",
+        remove_redundant_instance: bool = False,
     ) -> DatasetHandle:
         df = dataset.dataframe
 
+        # Determine feature names and which data to transpose
         if feature_names_from and feature_names_from in df.columns:
             name_series = df.get_column(feature_names_from).cast(pl.Utf8)
             names = name_series.to_list()
-            df_without = df.drop(feature_names_from)
+
+            if remove_redundant_instance:
+                # Drop the column before transposing so it does NOT
+                # appear as a (redundant) row in the output.
+                df_to_transpose = df.drop(feature_names_from)
+            else:
+                # Keep it — it becomes an extra row in the result.
+                df_to_transpose = df
         else:
             names = None
-            df_without = df
+            df_to_transpose = df
 
-        original_col_names = df_without.columns
-        transposed = df_without.transpose(include_header=True, header_name=auto_column_name)
+        transposed = df_to_transpose.transpose(
+            include_header=True, header_name=auto_column_name
+        )
 
         if names:
-            new_col_names = [auto_column_name] + [str(n) if n is not None else f"row_{i}" for i, n in enumerate(names)]
+            new_col_names = [auto_column_name] + [
+                str(n) if n is not None else f"row_{i}"
+                for i, n in enumerate(names)
+            ]
             if len(new_col_names) == len(transposed.columns):
                 transposed.columns = new_col_names
         else:
             new_col_names = [auto_column_name] + [
-                f"{feature_name_prefix}{i + 1}" for i in range(len(transposed.columns) - 1)
+                f"{feature_name_prefix}{i + 1}"
+                for i in range(len(transposed.columns) - 1)
             ]
             if len(new_col_names) == len(transposed.columns):
                 transposed.columns = new_col_names

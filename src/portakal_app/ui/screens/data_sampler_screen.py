@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.data_sampler_service import DataSamplerService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
@@ -33,13 +34,13 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # --- Sampling Type ---
-        mode_group = QGroupBox("Sampling Type")
+        mode_group = QGroupBox(i18n.t("Sampling Type"))
         mode_layout = QVBoxLayout(mode_group)
         mode_layout.setContentsMargins(10, 10, 10, 10)
         mode_layout.setSpacing(8)
@@ -47,7 +48,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._mode_group = QButtonGroup(self)
 
         # 1. Fixed proportion
-        self._radio_pct = QRadioButton("Fixed proportion of data:")
+        self._radio_pct = QRadioButton(i18n.t("Fixed proportion of data:"))
         self._radio_pct.setChecked(True)
         self._mode_group.addButton(self._radio_pct, 0)
         mode_layout.addWidget(self._radio_pct)
@@ -60,13 +61,13 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._pct_slider.setValue(70)
         self._pct_slider.valueChanged.connect(self._on_pct_changed)
         pct_layout.addWidget(self._pct_slider, 1)
-        self._pct_label = QLabel("70 %")
+        self._pct_label = QLabel(i18n.tf("{value} %", value=70))
         self._pct_label.setMinimumWidth(40)
         pct_layout.addWidget(self._pct_label)
         mode_layout.addLayout(pct_layout)
 
         # 2. Fixed sample size
-        self._radio_fixed = QRadioButton("Fixed sample size")
+        self._radio_fixed = QRadioButton(i18n.t("Fixed sample size"))
         self._mode_group.addButton(self._radio_fixed, 1)
         mode_layout.addWidget(self._radio_fixed)
 
@@ -76,7 +77,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         
         fixed_row = QHBoxLayout()
         fixed_row.setContentsMargins(0, 0, 0, 0)
-        fixed_row.addWidget(QLabel("Instances:"))
+        fixed_row.addWidget(QLabel(i18n.t("Instances:")))
         self._fixed_spin = QSpinBox()
         self._fixed_spin.setRange(1, 999999)
         self._fixed_spin.setValue(30)
@@ -84,12 +85,12 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         fixed_row.addStretch(1)
         fixed_layout.addLayout(fixed_row)
 
-        self._replacement_cb = QCheckBox("Sample with replacement")
+        self._replacement_cb = QCheckBox(i18n.t("Sample with replacement"))
         fixed_layout.addWidget(self._replacement_cb)
         mode_layout.addLayout(fixed_layout)
 
         # 3. Cross validation
-        self._radio_cv = QRadioButton("Cross validation")
+        self._radio_cv = QRadioButton(i18n.t("Cross validation"))
         self._mode_group.addButton(self._radio_cv, 2)
         mode_layout.addWidget(self._radio_cv)
 
@@ -99,7 +100,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
 
         folds_row = QHBoxLayout()
         folds_row.setContentsMargins(0, 0, 0, 0)
-        folds_row.addWidget(QLabel("Number of subsets:"))
+        folds_row.addWidget(QLabel(i18n.t("Number of subsets:")))
         self._folds_spin = QSpinBox()
         self._folds_spin.setRange(2, 20)
         self._folds_spin.setValue(5)
@@ -109,7 +110,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
 
         fold_row = QHBoxLayout()
         fold_row.setContentsMargins(0, 0, 0, 0)
-        fold_row.addWidget(QLabel("Unused subset:"))
+        fold_row.addWidget(QLabel(i18n.t("Unused subset:")))
         self._fold_spin = QSpinBox()
         self._fold_spin.setRange(1, 20)
         self._fold_spin.setValue(1)
@@ -120,19 +121,19 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         mode_layout.addLayout(cv_layout)
 
         # 4. Bootstrap
-        self._radio_bootstrap = QRadioButton("Bootstrap")
+        self._radio_bootstrap = QRadioButton(i18n.t("Bootstrap"))
         self._mode_group.addButton(self._radio_bootstrap, 3)
         mode_layout.addWidget(self._radio_bootstrap)
 
         layout.addWidget(mode_group)
 
         # --- Options (Reproducibility & Stratify) ---
-        options_group = QGroupBox("Options")
+        options_group = QGroupBox(i18n.t("Options"))
         options_layout = QVBoxLayout(options_group)
         options_layout.setContentsMargins(10, 10, 10, 10)
         options_layout.setSpacing(8)
 
-        self._use_seed = QCheckBox("Replicable (deterministic) sampling")
+        self._use_seed = QCheckBox(i18n.t("Replicable (deterministic) sampling"))
         self._use_seed.setChecked(True)
         options_layout.addWidget(self._use_seed)
 
@@ -141,7 +142,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._seed_spin.setValue(42)
         self._seed_spin.setVisible(False)
 
-        self._stratify_cb = QCheckBox("Stratify sample (when possible)")
+        self._stratify_cb = QCheckBox(i18n.t("Stratify sample (when possible)"))
         options_layout.addWidget(self._stratify_cb)
 
         layout.addWidget(options_group)
@@ -152,7 +153,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
-        self._apply_button = QPushButton("Sample Data")
+        self._apply_button = QPushButton(i18n.t("Sample Data"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         layout.addWidget(self._apply_button)
@@ -163,9 +164,9 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = None
         self._remaining_dataset = None
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
     def current_output_dataset(self) -> DatasetHandle | None:
@@ -211,7 +212,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         return "https://orangedatamining.com/widget-catalog/transform/datasampler/"
 
     def _on_pct_changed(self, value: int) -> None:
-        self._pct_label.setText(f"{value} %")
+        self._pct_label.setText(i18n.tf("{value} %", value=value))
 
     def _apply(self) -> None:
         if self._dataset_handle is None:
@@ -241,5 +242,16 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._remaining_dataset = remaining
         s_count = sample.row_count if sample else 0
         r_count = remaining.row_count if remaining else 0
-        self._result_label.setText(f"Sample: {s_count} rows  |  Remaining: {r_count} rows")
+        self._result_label.setText(i18n.tf("Sample: {sample} rows  |  Remaining: {remaining} rows", sample=s_count, remaining=r_count))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        else:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        self._pct_label.setText(i18n.tf("{value} %", value=self._pct_slider.value()))
+        if self._output_dataset is not None:
+            s_count = self._output_dataset.row_count
+            r_count = self._remaining_dataset.row_count if self._remaining_dataset else 0
+            self._result_label.setText(i18n.tf("Sample: {sample} rows  |  Remaining: {remaining} rows", sample=s_count, remaining=r_count))

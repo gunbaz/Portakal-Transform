@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QRectF, QSize
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.merge_data_service import JOIN_TYPES, MergeDataService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 def _create_type_icon(logical_type: str) -> QIcon:
@@ -65,7 +66,7 @@ class MatchRow:
         self.left_combo.setIconSize(QSize(16, 16))
         layout.addWidget(self.left_combo, 1)
         
-        layout.addWidget(QLabel("matches"))
+        layout.addWidget(QLabel(i18n.t("matches")))
         
         self.right_combo = QComboBox()
         self.right_combo.setIconSize(QSize(16, 16))
@@ -78,10 +79,15 @@ class MatchRow:
         parent_screen._populate_combo(self.left_combo, parent_screen._dataset_handle)
         parent_screen._populate_combo(self.right_combo, parent_screen._extra_handle)
         
-        if left_text and self.left_combo.findText(left_text) >= 0:
-            self.left_combo.setCurrentText(left_text)
-        if right_text and self.right_combo.findText(right_text) >= 0:
-            self.right_combo.setCurrentText(right_text)
+        if left_text:
+            idx = self.left_combo.findData(left_text)
+            if idx < 0: idx = self.left_combo.findText(left_text)
+            if idx >= 0: self.left_combo.setCurrentIndex(idx)
+            
+        if right_text:
+            idx = self.right_combo.findData(right_text)
+            if idx < 0: idx = self.right_combo.findText(right_text)
+            if idx >= 0: self.right_combo.setCurrentIndex(idx)
             
         self.del_btn.clicked.connect(lambda: parent_screen._remove_match_row(self))
 
@@ -101,7 +107,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Data: none")
+        self._dataset_label = QLabel(i18n.t("Data: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
@@ -111,9 +117,9 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         
         self._join_group = QButtonGroup(self)
         
-        self._radio_left = QRadioButton("Append columns from Extra Data")
-        self._radio_inner = QRadioButton("Find matching pairs of rows")
-        self._radio_outer = QRadioButton("Concatenate tables")
+        self._radio_left = QRadioButton(i18n.t("Append columns from Extra Data"))
+        self._radio_inner = QRadioButton(i18n.t("Find matching pairs of rows"))
+        self._radio_outer = QRadioButton(i18n.t("Concatenate tables"))
         
         self._radio_left.setChecked(True)
         
@@ -127,7 +133,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         
         layout.addLayout(options_layout)
 
-        match_group = QGroupBox("Row matching")
+        match_group = QGroupBox(i18n.t("Row matching"))
         match_group_layout = QVBoxLayout(match_group)
         match_group_layout.setContentsMargins(10, 10, 10, 10)
         match_group_layout.setSpacing(5)
@@ -146,7 +152,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addWidget(match_group)
 
-        self._data_info = QLabel("Data: -  |  Extra: -")
+        self._data_info = QLabel(i18n.t("Data: -  |  Extra: -"))
         layout.addWidget(self._data_info)
 
         self._result_label = QLabel("")
@@ -157,7 +163,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("MERGE")
+        self._apply_button = QPushButton(i18n.t("MERGE"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -180,8 +186,8 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
-        left_cols = [row.left_combo.currentText() for row in self._match_rows if row.left_combo.currentText()]
-        right_cols = [row.right_combo.currentText() for row in self._match_rows if row.right_combo.currentText()]
+        left_cols = [row.left_combo.currentData() for row in self._match_rows if row.left_combo.currentData()]
+        right_cols = [row.right_combo.currentData() for row in self._match_rows if row.right_combo.currentData()]
         
         return {
             "left_on": json.dumps(left_cols),
@@ -225,9 +231,10 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         combo.clear()
         if not dataset:
             return
-        combo.addItem(QIcon(), "Row index")
+        combo.addItem(QIcon(), i18n.t("Row index"), "Row index")
+        combo.addItem(QIcon(), i18n.t("Instance id"), "Instance id")
         for col in dataset.domain.columns:
-            combo.addItem(_create_type_icon(col.logical_type), col.name)
+            combo.addItem(_create_type_icon(col.logical_type), col.name, col.name)
             
     def _add_match_row(self, left_text="", right_text=""):
         row = MatchRow(self, left_text, right_text)
@@ -242,23 +249,28 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _update_all_combos(self) -> None:
         if self._dataset_handle:
-            self._dataset_label.setText(f"Data: {self._dataset_handle.display_name}")
+            self._dataset_label.setText(i18n.tf("Data: {name}", name=self._dataset_handle.display_name))
         else:
-            self._dataset_label.setText("Data: none")
+            self._dataset_label.setText(i18n.t("Data: none"))
 
         for row in self._match_rows:
-            lt = row.left_combo.currentText()
-            rt = row.right_combo.currentText()
+            lt = row.left_combo.currentData() or row.left_combo.currentText()
+            rt = row.right_combo.currentData() or row.right_combo.currentText()
             self._populate_combo(row.left_combo, self._dataset_handle)
             self._populate_combo(row.right_combo, self._extra_handle)
-            if lt and row.left_combo.findText(lt) >= 0:
-                row.left_combo.setCurrentText(lt)
-            if rt and row.right_combo.findText(rt) >= 0:
-                row.right_combo.setCurrentText(rt)
+            
+            if lt:
+                idx = row.left_combo.findData(lt)
+                if idx < 0: idx = row.left_combo.findText(lt)
+                if idx >= 0: row.left_combo.setCurrentIndex(idx)
+            if rt:
+                idx = row.right_combo.findData(rt)
+                if idx < 0: idx = row.right_combo.findText(rt)
+                if idx >= 0: row.right_combo.setCurrentIndex(idx)
 
         d_info = f"{self._dataset_handle.row_count}r" if self._dataset_handle else "-"
         e_info = f"{self._extra_handle.row_count}r" if self._extra_handle else "-"
-        self._data_info.setText(f"Data: {d_info}  |  Extra: {e_info}")
+        self._data_info.setText(i18n.tf("Data: {d}  |  Extra: {e}", d=d_info, e=e_info))
 
     def _apply(self) -> None:
         if self._dataset_handle is None or self._extra_handle is None:
@@ -270,14 +282,14 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         left_on = []
         right_on = []
         for row in self._match_rows:
-            lt = row.left_combo.currentText()
-            rt = row.right_combo.currentText()
+            lt = row.left_combo.currentData()
+            rt = row.right_combo.currentData()
             if lt and rt:
                 left_on.append(lt)
                 right_on.append(rt)
                 
         if not left_on:
-            self._result_label.setText("Please select valid columns to match.")
+            self._result_label.setText(i18n.t("Please select valid columns to match."))
             return
 
         join_types = {0: "Left Join", 1: "Inner Join", 2: "Outer Join"}
@@ -292,10 +304,25 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
                 join_type=jt,
             )
             self._result_label.setText(
-                f"Result: {self._output_dataset.row_count} rows x {self._output_dataset.column_count} columns"
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
             )
         except Exception as e:
-            self._result_label.setText(f"Merge Error: {str(e)}")
+            self._result_label.setText(i18n.tf("Merge Error: {err}", err=str(e)))
             self._output_dataset = None
-            
+
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle:
+            self._dataset_label.setText(
+                i18n.tf("Data: {name}", name=self._dataset_handle.display_name)
+            )
+        else:
+            self._dataset_label.setText(i18n.t("Data: none"))
+        d_info = f"{self._dataset_handle.row_count}r" if self._dataset_handle else "-"
+        e_info = f"{self._extra_handle.row_count}r" if self._extra_handle else "-"
+        self._data_info.setText(i18n.tf("Data: {d}  |  Extra: {e}", d=d_info, e=e_info))
+        if self._output_dataset is not None:
+            self._result_label.setText(
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+            )

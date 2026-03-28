@@ -21,6 +21,7 @@ from portakal_app.data.services.select_rows_service import (
     OPERATORS_STRING,
     SelectRowsService,
 )
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 def _create_type_icon(logical_type: str) -> QIcon:
@@ -121,22 +122,22 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        cond_group = QGroupBox("Conditions")
+        cond_group = QGroupBox(i18n.t("Conditions"))
         self._cond_layout = QVBoxLayout(cond_group)
         self._cond_layout.setContentsMargins(10, 10, 10, 10)
         self._cond_layout.setSpacing(6)
         layout.addWidget(cond_group, 1)
 
         btn_row = QHBoxLayout()
-        self._add_btn = QPushButton("+ Add Condition")
+        self._add_btn = QPushButton(i18n.t("+ Add Condition"))
         self._add_btn.clicked.connect(self._add_condition)
         btn_row.addWidget(self._add_btn)
-        self._clear_btn = QPushButton("Remove All")
+        self._clear_btn = QPushButton(i18n.t("Remove All"))
         self._clear_btn.clicked.connect(self._clear_conditions)
         btn_row.addWidget(self._clear_btn)
         btn_row.addStretch(1)
@@ -148,7 +149,7 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -162,9 +163,9 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         self._clear_conditions()
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
     def current_output_dataset(self) -> DatasetHandle | None:
@@ -242,5 +243,19 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         self._unmatched_dataset = non_matching
         m = matching.row_count if matching else 0
         nm = non_matching.row_count if non_matching else 0
-        self._result_label.setText(f"Matching: {m}  |  Unmatched: {nm}")
+        self._result_label.setText(i18n.tf("Matching: {m}  |  Unmatched: {nm}", m=m, nm=nm))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(
+                i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name)
+            )
+        if self._output_dataset is not None:
+            m = self._output_dataset.row_count
+            nm = self._unmatched_dataset.row_count if self._unmatched_dataset else 0
+            self._result_label.setText(
+                i18n.tf("Matching: {m}  |  Unmatched: {nm}", m=m, nm=nm)
+            )

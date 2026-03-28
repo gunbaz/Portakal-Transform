@@ -34,13 +34,13 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(6)
 
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("Filter...")
+        self._filter_edit.setPlaceholderText(i18n.t("Filter..."))
         self._filter_edit.textChanged.connect(self._on_filter_changed)
         layout.addWidget(self._filter_edit)
 
         self._table = QTableWidget()
         self._table.setColumnCount(2)
-        self._table.setHorizontalHeaderLabels(["Variable", "Value"])
+        self._table.setHorizontalHeaderLabels([i18n.t("Variable"), i18n.t("Value")])
         header = self._table.horizontalHeader()
         if header:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
@@ -52,19 +52,19 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         
-        self._btn_median = QPushButton("Median")
+        self._btn_median = QPushButton(i18n.t("Median"))
         self._btn_median.clicked.connect(lambda: self._fill_defaults("median"))
         btn_row.addWidget(self._btn_median)
-        
-        self._btn_mean = QPushButton("Mean")
+
+        self._btn_mean = QPushButton(i18n.t("Mean"))
         self._btn_mean.clicked.connect(lambda: self._fill_defaults("mean"))
         btn_row.addWidget(self._btn_mean)
-        
-        self._btn_random = QPushButton("Random")
+
+        self._btn_random = QPushButton(i18n.t("Random"))
         self._btn_random.clicked.connect(lambda: self._fill_defaults("random"))
         btn_row.addWidget(self._btn_random)
-        
-        self._btn_input = QPushButton("Input")
+
+        self._btn_input = QPushButton(i18n.t("Input"))
         self._btn_input.clicked.connect(self._fill_from_input)
         btn_row.addWidget(self._btn_input)
         
@@ -72,17 +72,17 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addLayout(btn_row)
 
         bottom_row = QHBoxLayout()
-        self._append_cb = QCheckBox("Append this instance to input data")
+        self._append_cb = QCheckBox(i18n.t("Append this instance to input data"))
         self._append_cb.setChecked(True)
         self._append_cb.stateChanged.connect(self._check_auto_apply)
         bottom_row.addWidget(self._append_cb)
-        
+
         bottom_row.addStretch(1)
-        self._auto_apply_cb = QCheckBox("Apply Automatically")
+        self._auto_apply_cb = QCheckBox(i18n.t("Apply Automatically"))
         self._auto_apply_cb.setChecked(True)
         bottom_row.addWidget(self._auto_apply_cb)
 
-        self._apply_button = QPushButton("Create")
+        self._apply_button = QPushButton(i18n.t("Create"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         bottom_row.addWidget(self._apply_button)
@@ -168,7 +168,7 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
             self._table.setItem(idx, 0, var_item)
             
             edit = QLineEdit()
-            edit.setPlaceholderText("value")
+            edit.setPlaceholderText(i18n.t("value"))
             # restore old value if any
             if col.name in old_values:
                 edit.setText(old_values[col.name])
@@ -222,6 +222,10 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
                 
         self._check_auto_apply()
 
+    def refresh_translations(self) -> None:
+        if self._output_dataset is not None:
+            self._result_label.setText(i18n.tf("Created instance. Output: {rows} rows", rows=self._output_dataset.row_count))
+
     def _apply(self) -> None:
         schema_ds = self._get_schema_ds()
         if schema_ds is None:
@@ -242,9 +246,9 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
                 values=values,
                 append_to_data=self._append_cb.isChecked(),
             )
-            self._result_label.setText(f"Created instance. Output: {self._output_dataset.row_count} rows")
+            self._result_label.setText(i18n.tf("Created instance. Output: {rows} rows", rows=self._output_dataset.row_count))
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Error creating instance: {e}")
+            self._result_label.setText(i18n.tf("Error creating instance: {error}", error=e))
 
         self._notify_output_changed()

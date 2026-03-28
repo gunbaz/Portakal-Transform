@@ -31,21 +31,22 @@ class SelectColumnsService:
         for name in metas:
             role_map[name] = "meta"
 
+        old_schema_map = {col.name: col for col in dataset.domain.columns}
         new_columns: list[ColumnSchema] = []
-        for col in dataset.domain.columns:
-            if col.name in role_map:
-                new_columns.append(
-                    ColumnSchema(
-                        name=col.name,
-                        dtype_repr=col.dtype_repr,
-                        logical_type=col.logical_type,
-                        role=role_map[col.name],
-                        nullable=col.nullable,
-                        null_count=col.null_count,
-                        unique_count_hint=col.unique_count_hint,
-                        sample_values=col.sample_values,
-                    )
+        for name in keep_cols:
+            col = old_schema_map[name]
+            new_columns.append(
+                ColumnSchema(
+                    name=col.name,
+                    dtype_repr=col.dtype_repr,
+                    logical_type=col.logical_type,
+                    role=role_map[col.name],
+                    nullable=col.nullable,
+                    null_count=col.null_count,
+                    unique_count_hint=col.unique_count_hint,
+                    sample_values=col.sample_values,
                 )
+            )
 
         return replace(
             dataset,

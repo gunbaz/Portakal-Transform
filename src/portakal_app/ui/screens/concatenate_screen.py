@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.concatenate_service import ConcatenateService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
@@ -33,16 +34,16 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(10)
 
         # "Variable Sets Merging" Group
-        mode_group = QGroupBox("Variable Sets Merging")
+        mode_group = QGroupBox(i18n.t("Variable Sets Merging"))
         mode_layout = QVBoxLayout(mode_group)
         mode_layout.setContentsMargins(10, 10, 10, 10)
         mode_layout.setSpacing(6)
         
-        mode_layout.addWidget(QLabel("When there is no primary table, the output should contain"))
+        mode_layout.addWidget(QLabel(i18n.t("When there is no primary table, the output should contain")))
         self._mode_group = QButtonGroup(self)
         
-        self._radio_union = QRadioButton("all variables that appear in input tables")
-        self._radio_intersection = QRadioButton("only variables that appear in all tables")
+        self._radio_union = QRadioButton(i18n.t("all variables that appear in input tables"))
+        self._radio_intersection = QRadioButton(i18n.t("only variables that appear in all tables"))
         
         self._radio_union.setChecked(True)
         self._mode_group.addButton(self._radio_union, 0)
@@ -51,20 +52,20 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         mode_layout.addWidget(self._radio_union)
         mode_layout.addWidget(self._radio_intersection)
         
-        info_lbl = QLabel("The resulting table will have a class only if there is no conflict\nbetween input classes.")
+        info_lbl = QLabel(i18n.t("The resulting table will have a class only if there is no conflict\nbetween input classes."))
         info_lbl.setStyleSheet("color: #666;")
         mode_layout.addWidget(info_lbl)
         
         layout.addWidget(mode_group)
 
         # "Variable matching" Group
-        match_group = QGroupBox("Variable matching")
+        match_group = QGroupBox(i18n.t("Variable matching"))
         match_layout = QVBoxLayout(match_group)
         match_layout.setContentsMargins(10, 10, 10, 10)
         match_layout.setSpacing(6)
         
-        self._check_primary_names = QCheckBox("Use column names from the primary table,\nand ignore names in other tables.")
-        self._check_same_formula = QCheckBox("Treat variables with the same name as the same variable,\neven if they are computed using different formulae.")
+        self._check_primary_names = QCheckBox(i18n.t("Use column names from the primary table,\nand ignore names in other tables."))
+        self._check_same_formula = QCheckBox(i18n.t("Treat variables with the same name as the same variable,\neven if they are computed using different formulae."))
         
         match_layout.addWidget(self._check_primary_names)
         match_layout.addWidget(self._check_same_formula)
@@ -72,16 +73,16 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(match_group)
 
         # "Source Identification" Group
-        source_group = QGroupBox("Source Identification")
+        source_group = QGroupBox(i18n.t("Source Identification"))
         source_layout = QVBoxLayout(source_group)
         source_layout.setContentsMargins(10, 10, 10, 10)
         source_layout.setSpacing(8)
         
-        self._add_source = QCheckBox("Append data source IDs")
+        self._add_source = QCheckBox(i18n.t("Append data source IDs"))
         source_layout.addWidget(self._add_source)
         
         name_row = QHBoxLayout()
-        name_lbl = QLabel("Feature name:")
+        name_lbl = QLabel(i18n.t("Feature name:"))
         name_lbl.setFixedWidth(80)
         name_row.addWidget(name_lbl)
         self._source_name = QLineEdit("Source ID")
@@ -89,17 +90,17 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         source_layout.addLayout(name_row)
         
         place_row = QHBoxLayout()
-        place_lbl = QLabel("Place:")
+        place_lbl = QLabel(i18n.t("Place:"))
         place_lbl.setFixedWidth(80)
         place_row.addWidget(place_lbl)
         self._source_role = QComboBox()
-        self._source_role.addItems(["Class attribute", "Meta attribute", "Feature"])
+        self._source_role.addItems([i18n.t("Class attribute"), i18n.t("Meta attribute"), i18n.t("Feature")])
         place_row.addWidget(self._source_role)
         source_layout.addLayout(place_row)
         
         layout.addWidget(source_group)
 
-        self._info_label = QLabel("Primary: -  |  Additional: -")
+        self._info_label = QLabel(i18n.t("Primary: -  |  Additional: -"))
         layout.addWidget(self._info_label)
 
         self._result_label = QLabel("")
@@ -110,7 +111,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -135,7 +136,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
             "use_primary_names_only": self._check_primary_names.isChecked(),
             "add_source": self._add_source.isChecked(),
             "source_name": self._source_name.text(),
-            "source_role": self._source_role.currentText(),
+            "source_role": self._source_role.currentIndex(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -161,7 +162,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
     def _update_info(self) -> None:
         p = f"{self._primary.row_count}r" if self._primary else "-"
         a = f"{self._additional.row_count}r" if self._additional else "-"
-        self._info_label.setText(f"Primary: {p}  |  Additional: {a}")
+        self._info_label.setText(i18n.tf("Primary: {p}  |  Additional: {a}", p=p, a=a))
 
     def _apply(self) -> None:
         datasets = [ds for ds in [self._primary, self._additional] if ds is not None]
@@ -173,8 +174,8 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
         mode = "Intersection" if self._mode_group.checkedId() == 1 else "Union"
         
-        role_map = {"Class attribute": "target", "Meta attribute": "meta", "Feature": "feature"}
-        mapped_role = role_map.get(self._source_role.currentText(), "feature")
+        role_map = {0: "target", 1: "meta", 2: "feature"}
+        mapped_role = role_map.get(self._source_role.currentIndex(), "feature")
 
         self._output_dataset = self._service.concatenate(
             datasets,
@@ -187,8 +188,17 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
         if self._output_dataset:
             self._result_label.setText(
-                f"Result: {self._output_dataset.row_count} rows x {self._output_dataset.column_count} columns"
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
             )
         else:
-            self._result_label.setText("No output.")
+            self._result_label.setText(i18n.t("No output."))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        p = f"{self._primary.row_count}r" if self._primary else "-"
+        a = f"{self._additional.row_count}r" if self._additional else "-"
+        self._info_label.setText(i18n.tf("Primary: {p}  |  Additional: {a}", p=p, a=a))
+        if self._output_dataset is not None:
+            self._result_label.setText(
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+            )

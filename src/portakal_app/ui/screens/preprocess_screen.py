@@ -50,18 +50,18 @@ class StepEditor(QGroupBox):
 
 class ContinuizeEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Continuize Discrete Variables", parent)
+        super().__init__(i18n.t("Continuize Discrete Variables"), parent)
         self.group = QButtonGroup(self)
         self.methods = [
-            "Most frequent is base", 
-            "One feature per value", 
+            "Most frequent is base",
+            "One feature per value",
             "Remove non-binary features",
             "Remove categorical features",
             "Treat as ordinal",
             "Divide by number of values"
         ]
         for idx, text in enumerate(self.methods):
-            rb = QRadioButton(text)
+            rb = QRadioButton(i18n.t(text))
             if text == "One feature per value":
                 rb.setChecked(True)
             self.group.addButton(rb, idx)
@@ -79,7 +79,7 @@ class ContinuizeEditor(StepEditor):
 
 class ImputeEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Impute Missing Values", parent)
+        super().__init__(i18n.t("Impute Missing Values"), parent)
         self.group = QButtonGroup(self)
         self.methods = [
             "Average/Most frequent",
@@ -87,7 +87,7 @@ class ImputeEditor(StepEditor):
             "Remove rows with missing values"
         ]
         for idx, text in enumerate(self.methods):
-            rb = QRadioButton(text)
+            rb = QRadioButton(i18n.t(text))
             if idx == 0:
                 rb.setChecked(True)
             self.group.addButton(rb, idx)
@@ -105,7 +105,7 @@ class ImputeEditor(StepEditor):
 
 class NormalizeEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Normalize Features", parent)
+        super().__init__(i18n.t("Normalize Features"), parent)
         self.group = QButtonGroup(self)
         self.methods = [
             "Standardize to μ=0, σ²=1",
@@ -115,7 +115,7 @@ class NormalizeEditor(StepEditor):
             "Normalize to interval [0, 1]"
         ]
         for idx, text in enumerate(self.methods):
-            rb = QRadioButton(text)
+            rb = QRadioButton(i18n.t(text))
             if idx == 0:
                 rb.setChecked(True)
             self.group.addButton(rb, idx)
@@ -134,26 +134,26 @@ class NormalizeEditor(StepEditor):
 class FeatureSelectEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
         # Score, Fixed/proportion
-        super().__init__("Select Relevant Features", parent)
-        box = QGroupBox("Score", flat=True)
+        super().__init__(i18n.t("Select Relevant Features"), parent)
+        box = QGroupBox(i18n.t("Score"), flat=True)
         box_lyt = QVBoxLayout(box)
         self.score_cb = QComboBox()
         self.score_cb.addItems(["Information Gain", "Gain Ratio", "Gini Index", "ReliefF", "ANOVA", "Chi2", "Univariate Linear Regression"])
         box_lyt.addWidget(self.score_cb)
         self.layout.addWidget(box)
 
-        box2 = QGroupBox("Number of features", flat=True)
+        box2 = QGroupBox(i18n.t("Number of features"), flat=True)
         form = QFormLayout(box2)
         self.group = QButtonGroup(self)
-        
-        self.rb_fixed = QRadioButton("Fixed:")
+
+        self.rb_fixed = QRadioButton(i18n.t("Fixed:"))
         self.rb_fixed.setChecked(True)
         self.spin_fixed = QSpinBox()
         self.spin_fixed.setRange(1, 100000)
         self.spin_fixed.setValue(10)
         form.addRow(self.rb_fixed, self.spin_fixed)
-        
-        self.rb_prop = QRadioButton("Proportion:")
+
+        self.rb_prop = QRadioButton(i18n.t("Proportion:"))
         self.spin_prop = QDoubleSpinBox()
         self.spin_prop.setRange(1, 100)
         self.spin_prop.setValue(75.0)
@@ -182,19 +182,19 @@ class FeatureSelectEditor(StepEditor):
 
 class RandomSelectEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Select Random Features", parent)
-        box2 = QGroupBox("Number of features", flat=True)
+        super().__init__(i18n.t("Select Random Features"), parent)
+        box2 = QGroupBox(i18n.t("Number of features"), flat=True)
         form = QFormLayout(box2)
         self.group = QButtonGroup(self)
-        
-        self.rb_fixed = QRadioButton("Fixed:")
+
+        self.rb_fixed = QRadioButton(i18n.t("Fixed:"))
         self.rb_fixed.setChecked(True)
         self.spin_fixed = QSpinBox()
         self.spin_fixed.setRange(1, 100000)
         self.spin_fixed.setValue(10)
         form.addRow(self.rb_fixed, self.spin_fixed)
-        
-        self.rb_prop = QRadioButton("Percentage:")
+
+        self.rb_prop = QRadioButton(i18n.t("Percentage:"))
         self.spin_prop = QDoubleSpinBox()
         self.spin_prop.setRange(1, 100)
         self.spin_prop.setValue(75.0)
@@ -222,11 +222,11 @@ class RandomSelectEditor(StepEditor):
 
 class RandomizeEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Randomize", parent)
-        self.cb_classes = QCheckBox("Classes")
+        super().__init__(i18n.t("Randomize"), parent)
+        self.cb_classes = QCheckBox(i18n.t("Classes"))
         self.cb_classes.setChecked(True)
-        self.cb_features = QCheckBox("Features")
-        self.cb_meta = QCheckBox("Meta data")
+        self.cb_features = QCheckBox(i18n.t("Features"))
+        self.cb_meta = QCheckBox(i18n.t("Meta data"))
         self.layout.addWidget(self.cb_classes)
         self.layout.addWidget(self.cb_features)
         self.layout.addWidget(self.cb_meta)
@@ -246,29 +246,29 @@ class RandomizeEditor(StepEditor):
 
 class RemoveSparseEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Remove Sparse Features", parent)
-        self.layout.addWidget(QLabel("Remove features with too many"))
+        super().__init__(i18n.t("Remove Sparse Features"), parent)
+        self.layout.addWidget(QLabel(i18n.t("Remove features with too many")))
         self.filter_group = QButtonGroup(self)
-        self.rb_missing = QRadioButton("missing values")
+        self.rb_missing = QRadioButton(i18n.t("missing values"))
         self.rb_missing.setChecked(True)
-        self.rb_zeroes = QRadioButton("zeros")
+        self.rb_zeroes = QRadioButton(i18n.t("zeros"))
         self.filter_group.addButton(self.rb_missing, 0)
         self.filter_group.addButton(self.rb_zeroes, 1)
         self.layout.addWidget(self.rb_missing)
         self.layout.addWidget(self.rb_zeroes)
 
-        box2 = QGroupBox("Threshold:", flat=True)
+        box2 = QGroupBox(i18n.t("Threshold:"), flat=True)
         form = QFormLayout(box2)
         self.thresh_group = QButtonGroup(self)
-        
-        self.rb_perc = QRadioButton("Percentage:")
+
+        self.rb_perc = QRadioButton(i18n.t("Percentage:"))
         self.rb_perc.setChecked(True)
         self.spin_perc = QSpinBox()
         self.spin_perc.setRange(0, 100)
         self.spin_perc.setValue(5)
         form.addRow(self.rb_perc, self.spin_perc)
-        
-        self.rb_fixed = QRadioButton("Fixed:")
+
+        self.rb_fixed = QRadioButton(i18n.t("Fixed:"))
         self.spin_fixed = QSpinBox()
         self.spin_fixed.setRange(0, 100000)
         self.spin_fixed.setValue(50)
@@ -300,25 +300,25 @@ class RemoveSparseEditor(StepEditor):
 
 class PCAEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Principal Component Analysis", parent)
-        self.layout.addWidget(QLabel("Not yet natively implemented in Portakal."))
+        super().__init__(i18n.t("Principal Component Analysis"), parent)
+        self.layout.addWidget(QLabel(i18n.t("Not yet natively implemented in Portakal.")))
 
 
 class CUREditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("CUR Matrix Decomposition", parent)
-        box2 = QGroupBox("Target rank", flat=True)
+        super().__init__(i18n.t("CUR Matrix Decomposition"), parent)
+        box2 = QGroupBox(i18n.t("Target rank"), flat=True)
         form = QFormLayout(box2)
         self.group = QButtonGroup(self)
-        
-        self.rb_fixed = QRadioButton("Fixed:")
+
+        self.rb_fixed = QRadioButton(i18n.t("Fixed:"))
         self.rb_fixed.setChecked(True)
         self.spin_fixed = QSpinBox()
         self.spin_fixed.setRange(1, 100000)
         self.spin_fixed.setValue(10)
         form.addRow(self.rb_fixed, self.spin_fixed)
-        
-        self.rb_prop = QRadioButton("Percentage:")
+
+        self.rb_prop = QRadioButton(i18n.t("Percentage:"))
         self.spin_prop = QDoubleSpinBox()
         self.spin_prop.setRange(1, 100)
         self.spin_prop.setValue(75.0)
@@ -387,16 +387,16 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         content_layout = QHBoxLayout()
-        
+
         # Left Panel (List of available preprocessors)
         left_panel = QVBoxLayout()
-        left_panel.addWidget(QLabel("Preprocessors"))
+        left_panel.addWidget(QLabel(i18n.t("Preprocessors")))
         self._list_widget = QListWidget()
         self._list_widget.addItems(self.AVAILABLE_PREPROCESSORS)
         self._list_widget.itemDoubleClicked.connect(self._add_preprocessor_from_list)
@@ -424,12 +424,12 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._result_label)
 
         footer = QHBoxLayout()
-        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(False)
         footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
-        
-        self._apply_button = QPushButton("Apply")
+
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -470,9 +470,9 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_handle = dataset
         self._output_dataset = None
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
         self._check_auto_apply()
 
@@ -508,7 +508,7 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", False)))
 
     def help_text(self) -> str:
-        return "Build a preprocessing pipeline: remove missing values, constant features, normalize, or standardize."
+        return i18n.t("Build a preprocessing pipeline: remove missing values, constant features, normalize, or standardize.")
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/preprocess/"
@@ -536,10 +536,22 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
             after_r = self._output_dataset.row_count
             after_c = self._output_dataset.column_count
             self._result_label.setText(
-                f"Successfully transformed.\nBefore: {before_r}r x {before_c}c  ->  After: {after_r}r x {after_c}c"
+                i18n.tf(
+                    "Successfully transformed.\nBefore: {before_r}r x {before_c}c  ->  After: {after_r}r x {after_c}c",
+                    before_r=before_r,
+                    before_c=before_c,
+                    after_r=after_r,
+                    after_c=after_c,
+                )
             )
         except Exception as e:
-            self._result_label.setText(f"Error during preprocessing: {e}")
+            self._result_label.setText(i18n.tf("Error during preprocessing: {error}", error=e))
             self._output_dataset = None
 
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))

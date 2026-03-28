@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.unique_service import TIEBREAKERS, UniqueService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 from portakal_app.ui.shared.type_icons import type_badge_icon
 
@@ -31,12 +32,12 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        group_by_group = QGroupBox("Group By")
+        group_by_group = QGroupBox(i18n.t("Group By"))
         group_by_layout = QVBoxLayout(group_by_group)
         group_by_layout.setContentsMargins(10, 10, 10, 10)
         group_by_layout.setSpacing(8)
@@ -47,7 +48,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addWidget(group_by_group, 1)
 
-        tiebreaker_group = QGroupBox("Tiebreaker")
+        tiebreaker_group = QGroupBox(i18n.t("Tiebreaker"))
         tiebreaker_layout = QVBoxLayout(tiebreaker_group)
         tiebreaker_layout.setContentsMargins(10, 10, 10, 10)
         tiebreaker_layout.setSpacing(8)
@@ -65,7 +66,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -78,13 +79,13 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         self._column_list.clear()
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 item = QListWidgetItem(type_badge_icon(col.logical_type), col.name)
                 item.setSelected(True)
                 self._column_list.addItem(item)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
     def current_output_dataset(self) -> DatasetHandle | None:
@@ -134,5 +135,15 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
 
         before = self._dataset_handle.row_count
         after = self._output_dataset.row_count
-        self._result_label.setText(f"Rows: {before} -> {after} ({before - after} duplicates removed)")
+        self._result_label.setText(i18n.tf("Rows: {before} -> {after} ({removed} duplicates removed)", before=before, after=after, removed=before - after))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        else:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        if self._output_dataset and self._dataset_handle:
+            before = self._dataset_handle.row_count
+            after = self._output_dataset.row_count
+            self._result_label.setText(i18n.tf("Rows: {before} -> {after} ({removed} duplicates removed)", before=before, after=after, removed=before - after))

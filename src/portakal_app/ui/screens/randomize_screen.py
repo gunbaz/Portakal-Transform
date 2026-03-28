@@ -30,47 +30,47 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        columns_group = QGroupBox("Shuffled columns")
+        columns_group = QGroupBox(i18n.t("Shuffled columns"))
         columns_layout = QHBoxLayout(columns_group)
         columns_layout.setContentsMargins(10, 10, 10, 10)
         columns_layout.setSpacing(15)
 
-        self._shuffle_classes = QCheckBox("Classes")
+        self._shuffle_classes = QCheckBox(i18n.t("Classes"))
         self._shuffle_classes.setChecked(True)
         columns_layout.addWidget(self._shuffle_classes)
 
-        self._shuffle_features = QCheckBox("Features")
+        self._shuffle_features = QCheckBox(i18n.t("Features"))
         self._shuffle_features.setChecked(False)
         columns_layout.addWidget(self._shuffle_features)
 
-        self._shuffle_metas = QCheckBox("Metas")
+        self._shuffle_metas = QCheckBox(i18n.t("Metas"))
         self._shuffle_metas.setChecked(False)
         columns_layout.addWidget(self._shuffle_metas)
         
         columns_layout.addStretch(1)
         layout.addWidget(columns_group)
 
-        rows_group = QGroupBox("Shuffled rows")
+        rows_group = QGroupBox(i18n.t("Shuffled rows"))
         rows_layout = QVBoxLayout(rows_group)
         rows_layout.setContentsMargins(10, 10, 10, 10)
         rows_layout.setSpacing(10)
 
         slider_row = QHBoxLayout()
-        slider_row.addWidget(QLabel("None"))
+        slider_row.addWidget(QLabel(i18n.t("None")))
         self._ratio_slider = QSlider(Qt.Orientation.Horizontal)
         self._ratio_slider.setRange(0, 100)
         self._ratio_slider.setValue(100)
         self._ratio_slider.valueChanged.connect(self._on_ratio_changed)
         slider_row.addWidget(self._ratio_slider, 1)
-        slider_row.addWidget(QLabel("All"))
+        slider_row.addWidget(QLabel(i18n.t("All")))
 
         rows_layout.addLayout(slider_row)
 
-        self._ratio_label = QLabel("100%")
+        self._ratio_label = QLabel(i18n.tf("{value}%", value=100))
         self._ratio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         rows_layout.addWidget(self._ratio_label)
 
-        self._replicable = QCheckBox("Replicable shuffling")
+        self._replicable = QCheckBox(i18n.t("Replicable shuffling"))
         self._replicable.setChecked(False)
         rows_layout.addWidget(self._replicable)
 
@@ -83,12 +83,12 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         
-        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(True)
         footer.addWidget(self.cb_apply_auto)
         
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -122,7 +122,7 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         
         ratio = int(payload.get("ratio", 100))
         self._ratio_slider.setValue(ratio)
-        self._ratio_label.setText(f"{ratio}%")
+        self._ratio_label.setText(i18n.tf("{value}%", value=ratio))
         
         # Support older saves for 'use_seed'
         rep = bool(payload.get("replicable", payload.get("use_seed", False)))
@@ -140,7 +140,7 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         return "https://orangedatamining.com/widget-catalog/transform/randomize/"
 
     def _on_ratio_changed(self, value: int) -> None:
-        self._ratio_label.setText(f"{value}%")
+        self._ratio_label.setText(i18n.tf("{value}%", value=value))
         if self.cb_apply_auto.isChecked():
             self._apply()
 
@@ -162,9 +162,12 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
                 shuffle_ratio=self._ratio_slider.value(),
                 seed=seed,
             )
-            self._result_label.setText("Randomization successful.")
+            self._result_label.setText(i18n.t("Randomization successful."))
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Error: {e}")
-            
+            self._result_label.setText(i18n.tf("Error: {err}", err=e))
+
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        self._ratio_label.setText(i18n.tf("{value}%", value=self._ratio_slider.value()))

@@ -48,13 +48,13 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(10)
 
         # Dataset info label
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # Default Method
-        method_group = QGroupBox("Default Method")
+        method_group = QGroupBox(i18n.t("Default Method"))
         method_layout = QVBoxLayout(method_group)
         method_layout.setContentsMargins(10, 10, 10, 10)
         
@@ -62,7 +62,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         grid_layout = QVBoxLayout()
         for idx, method in enumerate(METHODS):
             row = QHBoxLayout()
-            rb = QRadioButton(method)
+            rb = QRadioButton(i18n.t(method))
             if method == "Average/Most frequent":
                 rb.setChecked(True)
             self.default_group.addButton(rb, idx)
@@ -71,11 +71,11 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
             if method == "Fixed values":
                 self._fixed_edit = QLineEdit("0")
                 self._fixed_edit.setFixedWidth(80)
-                row.addWidget(QLabel(" value: "))
+                row.addWidget(QLabel(i18n.t(" value: ")))
                 row.addWidget(self._fixed_edit)
             
             if method == "Random values":
-                row.addWidget(QLabel(" seed: "))
+                row.addWidget(QLabel(i18n.t(" seed: ")))
                 self._seed_spin = QSpinBox()
                 self._seed_spin.setRange(0, 999999)
                 self._seed_spin.setValue(42)
@@ -88,16 +88,16 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(method_group)
 
         # Individual Attribute Settings
-        attr_group = QGroupBox("Individual Attribute Settings")
+        attr_group = QGroupBox(i18n.t("Individual Attribute Settings"))
         attr_layout = QVBoxLayout(attr_group)
         
         self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Attribute", "Imputation Method"])
+        self.table.setHorizontalHeaderLabels([i18n.t("Attribute"), i18n.t("Imputation Method")])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         attr_layout.addWidget(self.table)
         
-        btn_restore = QPushButton("Restore All to Default")
+        btn_restore = QPushButton(i18n.t("Restore All to Default"))
         btn_restore.clicked.connect(self._restore_defaults)
         attr_layout.addWidget(btn_restore)
         
@@ -110,12 +110,12 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
 
         # Footer applies
         footer = QHBoxLayout()
-        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(True)
         footer.addWidget(self.cb_apply_auto)
         
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -125,7 +125,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         for row in range(self.table.rowCount()):
             combo = self.table.cellWidget(row, 1)
             if isinstance(combo, QComboBox):
-                combo.setCurrentText("(Default)")
+                combo.setCurrentText(i18n.t("(Default)"))
 
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
@@ -133,7 +133,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = None
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             self.table.setRowCount(0)
             for c in dataset.domain.columns:
                 row = self.table.rowCount()
@@ -148,11 +148,11 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
                 self.table.setItem(row, 0, item)
                 
                 combo = QComboBox()
-                combo.addItem("(Default)")
-                combo.addItems(METHODS)
+                combo.addItem(i18n.t("(Default)"))
+                combo.addItems([i18n.t(m) for m in METHODS])
                 self.table.setCellWidget(row, 1, combo)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self.table.setRowCount(0)
             self._result_label.setText("")
             
@@ -167,8 +167,8 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         for row in range(self.table.rowCount()):
             col_name = self.table.item(row, 0).text()
             combo = self.table.cellWidget(row, 1)
-            if isinstance(combo, QComboBox) and combo.currentText() != "(Default)":
-                overrides[col_name] = combo.currentText()
+            if isinstance(combo, QComboBox) and combo.currentIndex() > 0:
+                overrides[col_name] = METHODS[combo.currentIndex() - 1]
 
         return {
             "default_method": METHODS[self.default_group.checkedId()],
@@ -196,7 +196,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
                 if col_name in overrides:
                     combo = self.table.cellWidget(row, 1)
                     if isinstance(combo, QComboBox) and overrides[col_name] in METHODS:
-                        combo.setCurrentText(overrides[col_name])
+                        combo.setCurrentIndex(METHODS.index(overrides[col_name]) + 1)
 
     def help_text(self) -> str:
         return "Fill missing values using average, fixed value, random sampling, or drop rows. You can override settings per column."

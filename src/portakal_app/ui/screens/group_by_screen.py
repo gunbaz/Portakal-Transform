@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.group_by_service import AGGREGATIONS, GroupByService
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
+from portakal_app.ui import i18n
 from portakal_app.ui.shared.type_icons import type_badge_icon
 
 
@@ -105,7 +106,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
@@ -117,7 +118,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        group_group = QGroupBox("Group By")
+        group_group = QGroupBox(i18n.t("Group By"))
         group_layout = QVBoxLayout(group_group)
         group_layout.setContentsMargins(10, 10, 10, 10)
         self._group_list = QListWidget()
@@ -134,7 +135,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
 
         self._attr_table = QTableWidget()
         self._attr_table.setColumnCount(2)
-        self._attr_table.setHorizontalHeaderLabels(["Attributes", "Aggregations"])
+        self._attr_table.setHorizontalHeaderLabels([i18n.t("Attributes"), i18n.t("Aggregations")])
         self._attr_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._attr_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._attr_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
@@ -148,7 +149,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(splitter, 1)
 
         # --- Aggregations checkboxes (grid like Orange) ---
-        agg_group = QGroupBox("Aggregations")
+        agg_group = QGroupBox(i18n.t("Aggregations"))
         agg_grid = QGridLayout(agg_group)
         agg_grid.setContentsMargins(10, 10, 10, 10)
         agg_grid.setSpacing(4)
@@ -177,7 +178,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -195,7 +196,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         self._value_columns.clear()
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 item = QListWidgetItem(type_badge_icon(col.logical_type), col.name)
                 self._group_list.addItem(item)
@@ -209,7 +210,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
             # Select all rows by default so checkboxes are instantly usable
             self._attr_table.selectAll()
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
     def _get_logical_type(self, attr_name: str) -> str:
@@ -255,7 +256,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
             if len(aggs_sorted) <= 3:
                 agg_text = ", ".join(aggs_sorted) if aggs_sorted else "-"
             else:
-                agg_text = ", ".join(aggs_sorted[:3]) + f" and {len(aggs_sorted) - 3} more"
+                agg_text = ", ".join(aggs_sorted[:3]) + " " + i18n.tf("and {count} more", count=len(aggs_sorted) - 3)
             
             agg_item = QTableWidgetItem(agg_text)
             agg_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
@@ -357,7 +358,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         self._rebuild_attr_table()
 
     def help_text(self) -> str:
-        return "Group the dataset by selected columns and compute per-attribute aggregations."
+        return i18n.t("Group the dataset by selected columns and compute per-attribute aggregations.")
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/groupby/"
@@ -388,6 +389,16 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         )
 
         self._result_label.setText(
-            f"Groups: {self._output_dataset.row_count} | Columns: {self._output_dataset.column_count}"
+            i18n.tf(
+                "Groups: {groups} | Columns: {columns}",
+                groups=self._output_dataset.row_count,
+                columns=self._output_dataset.column_count,
+            )
         )
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))

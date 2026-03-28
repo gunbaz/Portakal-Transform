@@ -31,46 +31,46 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(10)
 
         # Dataset label
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # Unique Row Identifier
-        id_group = QGroupBox("Unique Row Identifier")
+        id_group = QGroupBox(i18n.t("Unique Row Identifier"))
         id_layout = QVBoxLayout(id_group)
         id_layout.setContentsMargins(10, 10, 10, 10)
         self._id_combo = QComboBox()
-        self._id_combo.addItem("Row number")
+        self._id_combo.addItem(i18n.t("Row number"))
         id_layout.addWidget(self._id_combo)
         layout.addWidget(id_group)
 
         # Filter
-        filter_group = QGroupBox("Filter")
+        filter_group = QGroupBox(i18n.t("Filter"))
         filter_layout = QVBoxLayout(filter_group)
         filter_layout.setContentsMargins(10, 10, 10, 10)
-        self._ignore_non_numeric = QCheckBox("Ignore non-numeric features")
+        self._ignore_non_numeric = QCheckBox(i18n.t("Ignore non-numeric features"))
         self._ignore_non_numeric.setChecked(True)
         filter_layout.addWidget(self._ignore_non_numeric)
 
-        self._exclude_zeros = QCheckBox("Exclude zero values")
+        self._exclude_zeros = QCheckBox(i18n.t("Exclude zero values"))
         self._exclude_zeros.setChecked(False)
         filter_layout.addWidget(self._exclude_zeros)
         layout.addWidget(filter_group)
 
         # Names for generated features
-        names_group = QGroupBox("Names for generated features")
+        names_group = QGroupBox(i18n.t("Names for generated features"))
         names_layout = QVBoxLayout(names_group)
         names_layout.setContentsMargins(10, 10, 10, 10)
 
         item_row = QHBoxLayout()
-        item_row.addWidget(QLabel("Item:"))
+        item_row.addWidget(QLabel(i18n.t("Item:")))
         self._item_name = QLineEdit("item")
         item_row.addWidget(self._item_name)
         names_layout.addLayout(item_row)
 
         value_row = QHBoxLayout()
-        value_row.addWidget(QLabel("Value:"))
+        value_row.addWidget(QLabel(i18n.t("Value:")))
         self._value_name = QLineEdit("value")
         value_row.addWidget(self._value_name)
         names_layout.addLayout(value_row)
@@ -92,12 +92,12 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
 
         # Footer
         footer = QHBoxLayout()
-        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(True)
         footer.addWidget(self.cb_apply_auto)
-        
+
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -113,15 +113,15 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = None
         self._id_combo.blockSignals(True)
         self._id_combo.clear()
-        self._id_combo.addItem("Row number")
+        self._id_combo.addItem(i18n.t("Row number"))
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 if col.logical_type in ("text", "categorical"):
                     self._id_combo.addItem(col.name)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
         self._id_combo.blockSignals(False)
@@ -163,6 +163,16 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/melt/"
 
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        if self._output_dataset is not None:
+            self._result_label.setText(
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+            )
+
     def _apply(self) -> None:
         if self._dataset_handle is None:
             self._output_dataset = None
@@ -184,10 +194,10 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
                 value_name=self._value_name.text() or "value",
             )
             self._result_label.setText(
-                f"Result: {self._output_dataset.row_count} rows x {self._output_dataset.column_count} columns"
+                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
             )
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Error applying Melt: {e}")
+            self._result_label.setText(i18n.tf("Error applying Melt: {error}", error=e))
 
         self._notify_output_changed()

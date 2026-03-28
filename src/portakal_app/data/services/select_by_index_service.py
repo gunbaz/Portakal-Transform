@@ -22,24 +22,34 @@ class SelectByIndexService:
             # No common columns - cannot match, return all as non-matching
             return None, data
 
-        # Add a temporary row index to track positions
         idx_col = "__portakal_idx__"
+        dup_col = "__dup_idx__"
+        
         data_indexed = data_df.with_row_index(idx_col)
 
-        # Semi-join: keep rows from data that exist in subset
-        matching_indexed = data_indexed.join(
-            subset_df.select(common_cols).unique(),
-            on=common_cols,
-            how="semi",
+        # Distinguish completely identical duplicate rows by assigning them an occurrence number
+        data_keyed = data_indexed.with_columns(
+            pl.col(common_cols[0]).cum_count().over(common_cols).alias(dup_col)
         )
-        matching_indices = set(matching_indexed[idx_col].to_list())
+        subset_keyed = subset_df.with_columns(
+            pl.col(common_cols[0]).cum_count().over(common_cols).alias(dup_col)
+        )
+
+        join_on = common_cols + [dup_col]
+
+        # Semi-join: keep rows from data that exist in subset
+        matching_indexed = data_keyed.join(
+            subset_keyed.select(join_on).unique(),
+            on=join_on,
+            how="semi",
+        ).drop(dup_col)
 
         # Anti-join: keep rows from data that don't exist in subset
-        non_matching_indexed = data_indexed.join(
-            subset_df.select(common_cols).unique(),
-            on=common_cols,
+        non_matching_indexed = data_keyed.join(
+            subset_keyed.select(join_on).unique(),
+            on=join_on,
             how="anti",
-        )
+        ).drop(dup_col)
 
         matching_df = matching_indexed.drop(idx_col) if matching_indexed.height > 0 else None
         non_matching_df = non_matching_indexed.drop(idx_col) if non_matching_indexed.height > 0 else None

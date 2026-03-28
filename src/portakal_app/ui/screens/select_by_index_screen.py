@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.select_by_index_service import SelectByIndexService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
@@ -28,33 +29,35 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Data: none")
+        self._dataset_label = QLabel(i18n.t("Data: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        info_group = QGroupBox("Info")
+        info_group = QGroupBox(i18n.t("Info"))
         info_layout = QVBoxLayout(info_group)
         info_layout.setContentsMargins(10, 10, 10, 10)
         info_layout.setSpacing(8)
 
         self._desc_label = QLabel(
-            "Data rows keep their identity even when some or all original variables "
-            "are replaced by variables computed from the original ones.\n\n"
-            "This widget gets two data tables (\"Data\" and \"Data Subset\") that "
-            "can be traced back to the same source. It selects all rows from Data "
-            "that appear in Data Subset, based on row identity and not actual data."
+            i18n.t(
+                "Data rows keep their identity even when some or all original variables "
+                "are replaced by variables computed from the original ones.\n\n"
+                "This widget gets two data tables (\"Data\" and \"Data Subset\") that "
+                "can be traced back to the same source. It selects all rows from Data "
+                "that appear in Data Subset, based on row identity and not actual data."
+            )
         )
         self._desc_label.setWordWrap(True)
         info_layout.addWidget(self._desc_label)
 
-        self._data_info = QLabel("Data: -")
+        self._data_info = QLabel(i18n.t("Data: -"))
         info_layout.addWidget(self._data_info)
 
-        self._subset_info = QLabel("Data Subset: -")
+        self._subset_info = QLabel(i18n.t("Data Subset: -"))
         info_layout.addWidget(self._subset_info)
 
-        self._result_info = QLabel("Matching: -  |  Non-matching: -  |  Total: -")
+        self._result_info = QLabel(i18n.t("Matching: -  |  Non-matching: -  |  Total: -"))
         info_layout.addWidget(self._result_info)
 
         layout.addWidget(info_group)
@@ -62,7 +65,7 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -104,22 +107,22 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _update_info(self) -> None:
         if self._dataset_handle:
-            self._dataset_label.setText(f"Data: {self._dataset_handle.display_name}")
-            self._data_info.setText(f"Data: {self._dataset_handle.row_count} rows, {self._dataset_handle.column_count} columns")
+            self._dataset_label.setText(i18n.tf("Data: {name}", name=self._dataset_handle.display_name))
+            self._data_info.setText(i18n.tf("Data: {rows} rows, {cols} columns", rows=self._dataset_handle.row_count, cols=self._dataset_handle.column_count))
         else:
-            self._dataset_label.setText("Data: none")
-            self._data_info.setText("Data: -")
+            self._dataset_label.setText(i18n.t("Data: none"))
+            self._data_info.setText(i18n.t("Data: -"))
 
         if self._subset_handle:
-            self._subset_info.setText(f"Data Subset: {self._subset_handle.row_count} rows")
+            self._subset_info.setText(i18n.tf("Data Subset: {rows} rows", rows=self._subset_handle.row_count))
         else:
-            self._subset_info.setText("Data Subset: -")
+            self._subset_info.setText(i18n.t("Data Subset: -"))
 
     def _apply(self) -> None:
         if self._dataset_handle is None or self._subset_handle is None:
             self._output_matching = None
             self._output_non_matching = None
-            self._result_info.setText("Matching: -  |  Non-matching: -  |  Total: -")
+            self._result_info.setText(i18n.t("Matching: -  |  Non-matching: -  |  Total: -"))
             self._notify_output_changed()
             return
 
@@ -130,5 +133,15 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         m_count = matching.row_count if matching else 0
         nm_count = non_matching.row_count if non_matching else 0
         total = self._dataset_handle.row_count
-        self._result_info.setText(f"Matching: {m_count}  |  Non-matching: {nm_count}  |  Total: {total}")
+        self._result_info.setText(i18n.tf("Matching: {m}  |  Non-matching: {nm}  |  Total: {total}", m=m_count, nm=nm_count, total=total))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        self._update_info()
+        if self._output_matching is not None or self._output_non_matching is not None:
+            m_count = self._output_matching.row_count if self._output_matching else 0
+            nm_count = self._output_non_matching.row_count if self._output_non_matching else 0
+            total = self._dataset_handle.row_count if self._dataset_handle else 0
+            self._result_info.setText(i18n.tf("Matching: {m}  |  Non-matching: {nm}  |  Total: {total}", m=m_count, nm=nm_count, total=total))
+        else:
+            self._result_info.setText(i18n.t("Matching: -  |  Non-matching: -  |  Total: -"))

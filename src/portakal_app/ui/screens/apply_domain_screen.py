@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.apply_domain_service import ApplyDomainService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 
@@ -27,32 +28,34 @@ class ApplyDomainScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Data: none")
+        self._dataset_label = QLabel(i18n.t("Data: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
-        info_group = QGroupBox("Apply Domain")
+        info_group = QGroupBox(i18n.t("Apply Domain"))
         info_layout = QVBoxLayout(info_group)
         info_layout.setContentsMargins(10, 10, 10, 10)
         info_layout.setSpacing(8)
 
         self._desc_label = QLabel(
-            "Apply the domain (column structure, roles, and types) from a Template dataset "
-            "onto the input Data.\n\n"
-            "Columns present in the template but missing in the data will be filled with null values. "
-            "Columns in the data but not in the template will be dropped."
+            i18n.t(
+                "Apply the domain (column structure, roles, and types) from a Template dataset "
+                "onto the input Data.\n\n"
+                "Columns present in the template but missing in the data will be filled with null values. "
+                "Columns in the data but not in the template will be dropped."
+            )
         )
         self._desc_label.setWordWrap(True)
         info_layout.addWidget(self._desc_label)
 
-        self._data_info = QLabel("Data: -")
+        self._data_info = QLabel(i18n.t("Data: -"))
         info_layout.addWidget(self._data_info)
 
-        self._template_info = QLabel("Template: -")
+        self._template_info = QLabel(i18n.t("Template: -"))
         info_layout.addWidget(self._template_info)
 
-        self._result_info = QLabel("Output: -")
+        self._result_info = QLabel(i18n.t("Output: -"))
         info_layout.addWidget(self._result_info)
 
         layout.addWidget(info_group)
@@ -60,7 +63,7 @@ class ApplyDomainScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -93,31 +96,39 @@ class ApplyDomainScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _update_info(self) -> None:
         if self._dataset_handle:
-            self._dataset_label.setText(f"Data: {self._dataset_handle.display_name}")
+            self._dataset_label.setText(i18n.tf("Data: {name}", name=self._dataset_handle.display_name))
             self._data_info.setText(
-                f"Data: {self._dataset_handle.row_count} rows, {self._dataset_handle.column_count} columns"
+                i18n.tf("Data: {rows} rows, {cols} columns", rows=self._dataset_handle.row_count, cols=self._dataset_handle.column_count)
             )
         else:
-            self._dataset_label.setText("Data: none")
-            self._data_info.setText("Data: -")
+            self._dataset_label.setText(i18n.t("Data: none"))
+            self._data_info.setText(i18n.t("Data: -"))
 
         if self._template_handle:
             self._template_info.setText(
-                f"Template: {self._template_handle.display_name} "
-                f"({self._template_handle.column_count} columns)"
+                i18n.tf("Template: {name} ({cols} columns)", name=self._template_handle.display_name, cols=self._template_handle.column_count)
             )
         else:
-            self._template_info.setText("Template: -")
+            self._template_info.setText(i18n.t("Template: -"))
 
     def _apply(self) -> None:
         if self._dataset_handle is None or self._template_handle is None:
             self._output_dataset = None
-            self._result_info.setText("Output: -")
+            self._result_info.setText(i18n.t("Output: -"))
             self._notify_output_changed()
             return
 
         self._output_dataset = self._service.apply(self._dataset_handle, self._template_handle)
         self._result_info.setText(
-            f"Output: {self._output_dataset.row_count} rows, {self._output_dataset.column_count} columns"
+            i18n.tf("Output: {rows} rows, {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
         )
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        self._update_info()
+        if self._output_dataset:
+            self._result_info.setText(
+                i18n.tf("Output: {rows} rows, {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+            )
+        else:
+            self._result_info.setText(i18n.t("Output: -"))

@@ -42,7 +42,7 @@ class TestSelectByIndexService:
         from portakal_app.data.services.select_by_index_service import SelectByIndexService
 
         path = tmp_path / "subset.csv"
-        path.write_text("a\n1\n2\n", encoding="utf-8")
+        path.write_text("age,score,city\n25,80,Ankara\n30,90,Istanbul\n", encoding="utf-8")
         subset = FileImportService().load(str(path))
 
         matching, non_matching = SelectByIndexService().select(basic_dataset, subset)

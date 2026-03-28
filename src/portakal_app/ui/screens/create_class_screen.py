@@ -60,13 +60,13 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setSpacing(10)
 
         # "Dataset: " display for Workflow node compat
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # 1. New Class Name group
-        name_group = QGroupBox("New Class Name")
+        name_group = QGroupBox(i18n.t("New Class Name"))
         name_layout = QVBoxLayout(name_group)
         name_layout.setContentsMargins(10, 10, 10, 10)
         self._class_name = QLineEdit("class")
@@ -74,12 +74,12 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(name_group)
 
         # 2. Match by Substring group
-        match_group = QGroupBox("Match by Substring")
+        match_group = QGroupBox(i18n.t("Match by Substring"))
         match_layout = QVBoxLayout(match_group)
         match_layout.setContentsMargins(10, 10, 10, 10)
-        
+
         src_row = QHBoxLayout()
-        src_row.addWidget(QLabel("From column:"))
+        src_row.addWidget(QLabel(i18n.t("From column:")))
         self._source_combo = QComboBox()
         self._source_combo.currentIndexChanged.connect(self._check_apply)
         src_row.addWidget(self._source_combo, 1)
@@ -93,11 +93,11 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         spacer.setFixedWidth(24)
         header_row.addWidget(spacer)
         
-        name_lbl = QLabel("Name")
+        name_lbl = QLabel(i18n.t("Name"))
         header_row.addWidget(name_lbl, 1)
-        sub_lbl = QLabel("Substring")
+        sub_lbl = QLabel(i18n.t("Substring"))
         header_row.addWidget(sub_lbl, 1)
-        count_lbl = QLabel("Count")
+        count_lbl = QLabel(i18n.t("Count"))
         count_lbl.setFixedWidth(40)
         count_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(count_lbl)
@@ -124,19 +124,19 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(match_group, 1)
 
         # 3. Options Group
-        opts_group = QGroupBox("Options")
+        opts_group = QGroupBox(i18n.t("Options"))
         opts_layout = QVBoxLayout(opts_group)
         opts_layout.setContentsMargins(10, 10, 10, 10)
-        
-        self._use_regex = QCheckBox("Use regular expressions")
+
+        self._use_regex = QCheckBox(i18n.t("Use regular expressions"))
         self._use_regex.stateChanged.connect(self._check_apply)
         opts_layout.addWidget(self._use_regex)
-        
-        self._match_beginning = QCheckBox("Match only at the beginning")
+
+        self._match_beginning = QCheckBox(i18n.t("Match only at the beginning"))
         self._match_beginning.stateChanged.connect(self._check_apply)
         opts_layout.addWidget(self._match_beginning)
-        
-        self._case_sensitive = QCheckBox("Case sensitive")
+
+        self._case_sensitive = QCheckBox(i18n.t("Case sensitive"))
         self._case_sensitive.stateChanged.connect(self._check_apply)
         opts_layout.addWidget(self._case_sensitive)
         
@@ -147,7 +147,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._result_label)
 
         # Apply Button (Full width in Orange)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         layout.addWidget(self._apply_button)
@@ -164,7 +164,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         self._source_combo.clear()
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 type_label = col.logical_type
                 if type_label == "numeric":
@@ -177,7 +177,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
                     type_label = "Time"
                 self._source_combo.addItem(f"{col.name} ({type_label})", userData=col.name)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
         self._source_combo.blockSignals(False)
@@ -228,6 +228,12 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/createclass/"
 
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+
     def _add_rule(self) -> None:
         row = _RuleRow(self)
         row.remove_btn.clicked.connect(lambda: self._remove_rule(row))
@@ -277,10 +283,10 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             unique_classes = self._output_dataset.dataframe.get_column(
                 self._class_name.text() or "class"
             ).n_unique()
-            self._result_label.setText(f"Created '{self._class_name.text()}' with {unique_classes} matching categories")
+            self._result_label.setText(i18n.tf("Created '{name}' with {count} matching categories", name=self._class_name.text(), count=unique_classes))
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Error mapping class: {e}")
+            self._result_label.setText(i18n.tf("Error mapping class: {error}", error=e))
             for row in self._rule_rows:
                 row.count_label.setText("")
 

@@ -124,7 +124,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         left_layout.setSpacing(6)
 
         # Dataset info
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
         left_layout.addWidget(self._dataset_label)
         
@@ -135,7 +135,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         left_layout.addWidget(self._info_label)
 
         # Library
-        lib_group = QGroupBox("Library")
+        lib_group = QGroupBox(i18n.t("Library"))
         lib_layout = QVBoxLayout(lib_group)
         lib_layout.setContentsMargins(6, 6, 6, 6)
         self._library_list = QListWidget()
@@ -153,7 +153,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         self._btn_remove.clicked.connect(self._remove_from_library)
         lib_btns.addWidget(self._btn_remove)
         
-        self._btn_update = QPushButton("Update")
+        self._btn_update = QPushButton(i18n.t("Update"))
         self._btn_update.clicked.connect(self._update_library_item)
         lib_btns.addWidget(self._btn_update)
         
@@ -171,7 +171,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
 
         # Editor header
         editor_header = QHBoxLayout()
-        editor_lbl = QLabel("Editor")
+        editor_lbl = QLabel(i18n.t("Editor"))
         editor_lbl.setStyleSheet("font-weight: bold; font-size: 10pt;")
         editor_header.addWidget(editor_lbl)
         editor_header.addStretch(1)
@@ -201,7 +201,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         cw_layout.setContentsMargins(0, 4, 0, 0)
         cw_layout.setSpacing(2)
 
-        console_lbl = QLabel("Console")
+        console_lbl = QLabel(i18n.t("Console"))
         console_lbl.setStyleSheet("font-weight: bold; font-size: 10pt;")
         cw_layout.addWidget(console_lbl)
 
@@ -238,7 +238,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         bottom_bar.addWidget(self._result_label, 1)
 
-        self._run_button = QPushButton("Run")
+        self._run_button = QPushButton(i18n.t("Run"))
         self._run_button.setProperty("primary", True)
         self._run_button.clicked.connect(self._apply)
         self._run_button.setFixedWidth(100)
@@ -251,7 +251,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = None
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             # Build data type info
             lines = []
             for col in dataset.domain.columns:
@@ -265,13 +265,13 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
                 elif t == "datetime":
                     t = "Time"
                 lines.append(f"  {col.name} ({t})")
-            info_text = f"{dataset.row_count} rows × {dataset.column_count} cols\n"
+            info_text = i18n.tf("{rows} rows × {cols} cols", rows=dataset.row_count, cols=dataset.column_count) + "\n"
             info_text += "\n".join(lines[:15])
             if len(lines) > 15:
-                info_text += f"\n  ... +{len(lines)-15} more"
+                info_text += "\n  " + i18n.tf("... +{count} more", count=len(lines)-15)
             self._info_label.setText(info_text)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._info_label.setText("")
             self._result_label.setText("")
 
@@ -299,6 +299,16 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/pythonscript/"
 
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        if self._output_dataset is not None:
+            self._result_label.setText(
+                i18n.tf("Output: {rows}r × {cols}c", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+            )
+
     def _rebuild_library_list(self) -> None:
         self._library_list.blockSignals(True)
         self._library_list.clear()
@@ -315,7 +325,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _add_to_library(self) -> None:
         code = self._code_edit.toPlainText()
-        name = f"Script {len(self._library) + 1}"
+        name = i18n.tf("Script {num}", num=len(self._library) + 1)
         self._library.append({"name": name, "code": code})
         self._rebuild_library_list()
         self._library_list.setCurrentRow(len(self._library) - 1)
@@ -353,12 +363,12 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = result.output_dataset
 
         if result.error:
-            self._result_label.setText(f"Error: {result.error}")
+            self._result_label.setText(i18n.tf("Error: {error}", error=result.error))
         elif self._output_dataset:
             self._result_label.setText(
-                f"Output: {self._output_dataset.row_count}r × {self._output_dataset.column_count}c"
+                i18n.tf("Output: {rows}r × {cols}c", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
             )
         else:
-            self._result_label.setText("No output data.")
+            self._result_label.setText(i18n.t("No output data."))
 
         self._notify_output_changed()

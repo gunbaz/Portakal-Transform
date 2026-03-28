@@ -31,7 +31,7 @@ from portakal_app.ui import i18n
 
 class DiscretizeConfigurator(QGroupBox):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Discretize Settings", parent)
+        super().__init__(i18n.t("Discretize Settings"), parent)
         self.methods = METHODS
         
         self.preset_method = "Keep numeric"
@@ -79,7 +79,7 @@ class DiscretizeConfigurator(QGroupBox):
                     
             if has_time:
                 cb = QComboBox()
-                cb.addItems(["year(s)", "month(s)", "week(s)", "day(s)", "hour(s)", "minute(s)", "second(s)"])
+                cb.addItems([i18n.t("year(s)"), i18n.t("month(s)"), i18n.t("week(s)"), i18n.t("day(s)"), i18n.t("hour(s)"), i18n.t("minute(s)"), i18n.t("second(s)")])
                 cb.setEnabled(False)
                 row.addWidget(cb)
                 w_dict["combo"] = cb
@@ -92,16 +92,16 @@ class DiscretizeConfigurator(QGroupBox):
             if "edit" in w_dict: w_dict["edit"].textChanged.connect(self._on_value_change)
 
         # Build UI to exactly match Orange
-        add_rb(0, "Keep numeric")
-        add_rb(1, "Remove")
-        add_rb(2, "Natural binning, desired bins:", has_spinbox=True, spinbox_default=2)
-        add_rb(3, "Fixed width:", has_edit=True, edit_default="1.0")
-        add_rb(4, "Time interval:", has_edit=True, edit_default="1", has_time=True)
-        add_rb(5, "Equal frequency, intervals:", has_spinbox=True, spinbox_default=2)
-        add_rb(6, "Equal width, intervals:", has_spinbox=True, spinbox_default=2)
-        add_rb(7, "Entropy vs. MDL")
-        add_rb(8, "Custom:", has_edit=True, edit_default="", edit_label="e.g. 0.0, 0.5, 1.0")
-        add_rb(9, "Use default setting")
+        add_rb(0, i18n.t("Keep numeric"))
+        add_rb(1, i18n.t("Remove"))
+        add_rb(2, i18n.t("Natural binning, desired bins:"), has_spinbox=True, spinbox_default=2)
+        add_rb(3, i18n.t("Fixed width:"), has_edit=True, edit_default="1.0")
+        add_rb(4, i18n.t("Time interval:"), has_edit=True, edit_default="1", has_time=True)
+        add_rb(5, i18n.t("Equal frequency, intervals:"), has_spinbox=True, spinbox_default=2)
+        add_rb(6, i18n.t("Equal width, intervals:"), has_spinbox=True, spinbox_default=2)
+        add_rb(7, i18n.t("Entropy vs. MDL"))
+        add_rb(8, i18n.t("Custom:"), has_edit=True, edit_default="", edit_label=i18n.t("e.g. 0.0, 0.5, 1.0"))
+        add_rb(9, i18n.t("Use default setting"))
         
         right_panel.addStretch(1)
         layout.addLayout(right_panel, 6)
@@ -120,7 +120,7 @@ class DiscretizeConfigurator(QGroupBox):
     def _populate_list(self, cols: list[str]) -> None:
         self.list_widget.clear()
         
-        preset_item = QListWidgetItem(f"★ Default setting: {self.preset_method}")
+        preset_item = QListWidgetItem(i18n.tf("★ Default setting: {method}", method=self.preset_method))
         preset_item.setData(Qt.ItemDataRole.UserRole, "__PRESET__")
         self.list_widget.addItem(preset_item)
         
@@ -207,7 +207,7 @@ class DiscretizeConfigurator(QGroupBox):
                 self._on_value_change()
                 return
             self.preset_method = method
-            item.setText(f"★ Default setting: {method}")
+            item.setText(i18n.tf("★ Default setting: {method}", method=method))
             self.overrides["__PRESET__"] = conf
         else:
             if method == "Use default setting":
@@ -234,7 +234,7 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
@@ -247,16 +247,16 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._result_label)
 
         footer = QHBoxLayout()
-        btn_reset = QPushButton("Reset All")
+        btn_reset = QPushButton(i18n.t("Reset All"))
         btn_reset.clicked.connect(self._reset_all)
         footer.addWidget(btn_reset)
-        
+
         footer.addStretch(1)
-        self.cb_apply_auto = QCheckBox("Apply Automatically")
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(True)
         footer.addWidget(self.cb_apply_auto)
-        
-        self._apply_button = QPushButton("Apply")
+
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -273,12 +273,12 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._output_dataset = None
         
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             df = dataset.dataframe
             num_cols = [c for c in df.columns if df.get_column(c).dtype.is_numeric()]
             self.configurator._populate_list(num_cols)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
             self.configurator._populate_list([])
 
@@ -301,7 +301,7 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         if self.configurator.list_widget.count() > 0:
-            self.configurator.list_widget.item(0).setText(f"★ Default setting: {self.configurator.preset_method}")
+            self.configurator.list_widget.item(0).setText(i18n.tf("★ Default setting: {method}", method=self.configurator.preset_method))
 
         self.configurator._on_list_change(self.configurator.list_widget.currentRow())
 
@@ -313,6 +313,17 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/discretize/"
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name))
+        # Re-apply result label if output exists
+        if self._output_dataset is not None:
+            before = self._dataset_handle.column_count if self._dataset_handle else 0
+            after = self._output_dataset.column_count
+            self._result_label.setText(i18n.tf("Result: {after} columns (was {before})", after=after, before=before))
 
     def _apply(self) -> None:
         if self._dataset_handle is None:
@@ -337,9 +348,9 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
 
             before = self._dataset_handle.column_count
             after = self._output_dataset.column_count
-            self._result_label.setText(f"Result: {after} columns (was {before})")
+            self._result_label.setText(i18n.tf("Result: {after} columns (was {before})", after=after, before=before))
         except Exception as e:
             self._output_dataset = None
-            self._result_label.setText(f"Error: {e}")
+            self._result_label.setText(i18n.tf("Error: {error}", error=e))
 
         self._notify_output_changed()

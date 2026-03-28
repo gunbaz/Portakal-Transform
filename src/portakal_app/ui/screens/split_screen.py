@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QRectF
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.split_service import OUTPUT_TYPES, SplitService
+from portakal_app.ui import i18n
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 
 def _create_type_icon(logical_type: str) -> QIcon:
@@ -66,13 +67,13 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        self._dataset_label = QLabel("Dataset: none")
+        self._dataset_label = QLabel(i18n.t("Dataset: none"))
         self._dataset_label.setProperty("sectionTitle", True)
         self._dataset_label.setStyleSheet("font-size: 12pt; background: transparent;")
         layout.addWidget(self._dataset_label)
 
         # Variable Group
-        var_group = QGroupBox("Variable")
+        var_group = QGroupBox(i18n.t("Variable"))
         var_layout = QVBoxLayout(var_group)
         var_layout.setContentsMargins(10, 10, 10, 10)
         var_layout.setSpacing(8)
@@ -81,7 +82,7 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         var_layout.addWidget(self._column_combo)
 
         delim_row = QHBoxLayout()
-        delim_row.addWidget(QLabel("Delimiter:"))
+        delim_row.addWidget(QLabel(i18n.t("Delimiter:")))
         self._delimiter_edit = QLineEdit(";")
         self._delimiter_edit.setMaximumWidth(40)
         delim_row.addWidget(self._delimiter_edit)
@@ -91,16 +92,16 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(var_group)
 
         # Output Values Group
-        out_group = QGroupBox("Output Values")
+        out_group = QGroupBox(i18n.t("Output Values"))
         out_layout = QVBoxLayout(out_group)
         out_layout.setContentsMargins(10, 10, 10, 10)
         out_layout.setSpacing(6)
 
         self._type_group = QButtonGroup(self)
         
-        self._radio_cat = QRadioButton("Categorical (No, Yes)")
-        self._radio_num = QRadioButton("Numerical (0, 1)")
-        self._radio_counts = QRadioButton("Counts")
+        self._radio_cat = QRadioButton(i18n.t("Categorical (No, Yes)"))
+        self._radio_num = QRadioButton(i18n.t("Numerical (0, 1)"))
+        self._radio_counts = QRadioButton(i18n.t("Counts"))
         
         self._type_group.addButton(self._radio_cat, 0)
         self._type_group.addButton(self._radio_num, 1)
@@ -121,7 +122,7 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self._apply_button = QPushButton("Apply")
+        self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
@@ -134,12 +135,12 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         self._column_combo.clear()
 
         if dataset:
-            self._dataset_label.setText(f"Dataset: {dataset.display_name}")
+            self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
                 if col.logical_type in ("text", "categorical"):
                     self._column_combo.addItem(_create_type_icon(col.logical_type), col.name)
         else:
-            self._dataset_label.setText("Dataset: none")
+            self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
     def current_output_dataset(self) -> DatasetHandle | None:
@@ -196,5 +197,18 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         )
 
         new_cols = self._output_dataset.column_count - self._dataset_handle.column_count
-        self._result_label.setText(f"Added {new_cols} indicator column(s)")
+        self._result_label.setText(i18n.tf("Added {count} indicator column(s)", count=new_cols))
         self._notify_output_changed()
+
+    def refresh_translations(self) -> None:
+        if self._dataset_handle is None:
+            self._dataset_label.setText(i18n.t("Dataset: none"))
+        else:
+            self._dataset_label.setText(
+                i18n.tf("Dataset: {name}", name=self._dataset_handle.display_name)
+            )
+        if self._output_dataset is not None and self._dataset_handle is not None:
+            new_cols = self._output_dataset.column_count - self._dataset_handle.column_count
+            self._result_label.setText(
+                i18n.tf("Added {count} indicator column(s)", count=new_cols)
+            )

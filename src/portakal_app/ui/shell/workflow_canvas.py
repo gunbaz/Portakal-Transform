@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from portakal_app.models import PortDefinition, WidgetDefinition, workflow_ports_are_compatible
+from portakal_app.ui import i18n
 from portakal_app.ui.icons import get_widget_icon
 
 
@@ -45,7 +46,7 @@ class ChannelSelectionDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel(f"<b>Edit Links</b>")
+        title = QLabel(f"<b>{i18n.t('Edit Links')}</b>")
         layout.addWidget(title)
 
         header = QHBoxLayout()
