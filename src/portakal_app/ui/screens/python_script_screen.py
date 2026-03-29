@@ -25,13 +25,19 @@ from portakal_app.ui import i18n
 import re
 
 _DEFAULT_CODE = """\
-# Available variables:
-#   in_data  - input Polars DataFrame (or None)
-#   pl       - the polars module
-#   numpy    - numpy (as np)
+# ── Available variables ──────────────────────
+#   in_data   - input data (Polars DataFrame or Orange Table*)
+#   pl        - polars module
+#   np/numpy  - numpy module
+#   pd/pandas - pandas module
+#   Orange    - Orange module (if installed)
 #
-# Assign result to out_data:
-#   out_data = in_data.filter(pl.col("x") > 0)
+# * If your code uses in_data.X, in_data.domain etc.,
+#   in_data is automatically converted to an Orange Table.
+#
+# Assign result to out_data (Polars, Pandas, or Orange Table):
+#   out_data = in_data.filter(pl.col("x") > 0)     # Polars
+#   out_data = Orange.data.Table(domain, X, Y, M)   # Orange
 
 out_data = in_data
 """
@@ -349,26 +355,61 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _apply(self) -> None:
         code = self._code_edit.toPlainText()
+        self._console_text.setPlainText(">>> Running script...\n")
+
+        # Force UI update so user sees "Running..." immediately
+        from PySide6.QtCore import QCoreApplication
+        QCoreApplication.processEvents()
+
         result = self._service.execute(self._dataset_handle, code=code)
 
-        console_lines = []
-        if result.stdout:
-            console_lines.append(result.stdout)
-        if result.error:
-            console_lines.append(f"ERROR: {result.error}")
+        # ── Build console output ──────────────────────────────────
+        lines: list[str] = [">>> # Script executed"]
 
-        console_out = "\n".join(console_lines) if console_lines else "(no output)"
-        self._console_text.setPlainText(f">>> # Script executed\n{console_out}\n>>> ")
+        if result.stdout:
+            lines.append(result.stdout)
+
+        if result.error:
+            lines.append("")
+            lines.append("─── ERROR ───")
+            lines.append(result.error)
+
+        if result.output_dataset:
+            ds = result.output_dataset
+            lines.append("")
+            lines.append(f"✓ out_data: {ds.row_count} rows × {ds.column_count} cols")
+        elif not result.error:
+            lines.append("")
+            lines.append("(no out_data assigned)")
+
+        lines.append("")
+        lines.append(">>> ")
+
+        self._console_text.setPlainText("\n".join(lines))
+
+        # Scroll to bottom
+        cursor = self._console_text.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._console_text.setTextCursor(cursor)
 
         self._output_dataset = result.output_dataset
 
         if result.error:
-            self._result_label.setText(i18n.tf("Error: {error}", error=result.error))
+            # Show first line of error in status bar
+            first_line = result.error.strip().split("\n")[-1]
+            self._result_label.setText(f"Error: {first_line}")
+            self._result_label.setStyleSheet("color: #c75000;")
         elif self._output_dataset:
             self._result_label.setText(
-                i18n.tf("Output: {rows}r × {cols}c", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+                i18n.tf(
+                    "Output: {rows}r × {cols}c",
+                    rows=self._output_dataset.row_count,
+                    cols=self._output_dataset.column_count,
+                )
             )
+            self._result_label.setStyleSheet("")
         else:
             self._result_label.setText(i18n.t("No output data."))
+            self._result_label.setStyleSheet("")
 
         self._notify_output_changed()

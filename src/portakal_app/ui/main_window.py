@@ -1023,7 +1023,9 @@ class MainWindow(QMainWindow):
             return None
         try:
             payload = json.loads(text)
-        except json.JSONDecodeError:
+            if not isinstance(payload, dict):
+                return None
+        except (json.JSONDecodeError, TypeError):
             return None
         if payload.get("kind") != "portakal-workflow-selection":
             return None

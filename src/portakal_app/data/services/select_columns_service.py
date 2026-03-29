@@ -15,7 +15,9 @@ class SelectColumnsService:
         metas: list[str],
     ) -> DatasetHandle:
         df = dataset.dataframe
-        all_selected = features + target + metas
+        # Column hierarchy: Target → Meta → Features
+        # Ignored columns are physically dropped (not included here)
+        all_selected = target + metas + features
         keep_cols = [c for c in all_selected if c in df.columns]
 
         if not keep_cols:

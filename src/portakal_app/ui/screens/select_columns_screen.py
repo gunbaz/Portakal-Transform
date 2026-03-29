@@ -305,6 +305,12 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         main_boxes_layout.addLayout(right_panel, 1)
         layout.addLayout(main_boxes_layout, 1)
 
+        # ── Result info ─────────────────────────────────────────────────
+        self._result_label = QLabel("")
+        self._result_label.setWordWrap(True)
+        self._result_label.setStyleSheet("font-size: 9pt; color: #6b5d50; background: transparent;")
+        layout.addWidget(self._result_label)
+
         # ── Bottom bar ──────────────────────────────────────────────────
         bottom_layout = QHBoxLayout()
         self._reset_btn = QPushButton(i18n.t("Reset"))
@@ -438,15 +444,33 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
     def _apply(self) -> None:
         if self._dataset_handle is None:
             self._output_dataset = None
+            self._result_label.setText("")
             self._notify_output_changed()
             return
 
+        target_names = _list_items(self._target_list)
+        meta_names = _list_items(self._meta_list)
+        feature_names = _list_items(self._features_list)
+        ignored_names = _list_items(self._ignored_list)
+
         self._output_dataset = self._service.select(
             self._dataset_handle,
-            features=_list_items(self._features_list),
-            target=_list_items(self._target_list),
-            metas=_list_items(self._meta_list),
+            features=feature_names,
+            target=target_names,
+            metas=meta_names,
         )
+
+        kept = len(target_names) + len(meta_names) + len(feature_names)
+        dropped = len(ignored_names)
+        parts: list[str] = []
+        if target_names:
+            parts.append(i18n.tf("Target: {col}", col=target_names[0]))
+        parts.append(i18n.tf("{n} features", n=len(feature_names)))
+        if meta_names:
+            parts.append(i18n.tf("{n} meta", n=len(meta_names)))
+        if dropped:
+            parts.append(i18n.tf("{n} ignored (dropped)", n=dropped))
+        self._result_label.setText(" | ".join(parts))
         self._notify_output_changed()
 
 

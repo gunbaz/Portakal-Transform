@@ -350,7 +350,15 @@ class I18nManager(QObject):
                 # ── Unique ──
                 "Group By": "Gruplama",
                 "Tiebreaker": "Eşitlik Kırıcı",
+                "Instance to select in each group:": "Her grupta seçilecek örnek:",
                 "First instance": "İlk örnek",
+                "Last instance": "Son örnek",
+                "Middle instance": "Ortadaki örnek",
+                "Random instance": "Rastgele örnek",
+                "Discard non-unique": "Tekil olmayanları çıkar",
+                "Select All": "Tümünü Seç",
+                "Deselect All": "Seçimi Kaldır",
+                "Input: {before} → Output: {after} ({removed} duplicates removed)": "Girdi: {before} → Çıktı: {after} ({removed} kopya çıkarıldı)",
 
                 # ── Apply Domain ──
                 "Template": "Şablon",
@@ -372,6 +380,10 @@ class I18nManager(QObject):
                 "Sample Data": "Veriyi Örnekle",
                 "Sample:": "Örneklem:",
                 "Remaining:": "Kalan:",
+                "Target: {col}": "Hedef: {col}",
+                "Input: {n} rows": "Girdi: {n} satır",
+                "Sample: {n} rows": "Örneklem: {n} satır",
+                "Remaining: {n} rows": "Kalan: {n} satır",
 
                 # ── Select Columns ──
                 "Ignored": "Yoksayılan",
@@ -380,11 +392,19 @@ class I18nManager(QObject):
                 "Meta >": "Meta >",
                 "< Ignored": "< Yoksayılan",
                 "Meta": "Meta",
+                "{n} features": "{n} özellik",
+                "{n} meta": "{n} meta",
+                "{n} ignored (dropped)": "{n} yoksayılan (çıkarıldı)",
 
                 # ── Select Rows ──
                 "Conditions": "Koşullar",
                 "+ Add Condition": "+ Koşul Ekle",
                 "Remove All": "Tümünü Kaldır",
+                "All conditions must match (AND)": "Tüm koşullar sağlansın (VE)",
+                "At least one condition (OR)": "En az bir koşul sağlansın (VEYA)",
+                "Selected: {n}": "Seçilen: {n}",
+                "Remaining: {n}": "Kalan: {n}",
+                "Total: {n}": "Toplam: {n}",
                 "Matching:": "Eşleşen:",
                 "Unmatched:": "Eşleşmeyen:",
                 "Unmatched Data": "Eşleşmeyen Veri",
