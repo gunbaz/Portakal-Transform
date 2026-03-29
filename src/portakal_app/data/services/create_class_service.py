@@ -36,13 +36,19 @@ class CreateClassService:
             for rule_idx, (label, pattern) in enumerate(rules):
                 if class_values[i] is not None:
                     continue
-                if _matches(val, pattern, case_sensitive, use_regex, match_beginning):
-                    class_values[i] = label
+                # Empty pattern matches all remaining instances (Orange3 behavior)
+                if not pattern.strip():
+                    class_values[i] = label or f"C{rule_idx + 1}"
+                    counts[rule_idx] += 1
+                elif _matches(val, pattern, case_sensitive, use_regex, match_beginning):
+                    class_values[i] = label or f"C{rule_idx + 1}"
                     counts[rule_idx] += 1
 
+        # Assign fallback label for rows not matched by any rule
+        fallback = "Other"
         for i, v in enumerate(class_values):
             if v is None:
-                class_values[i] = "Other"
+                class_values[i] = fallback
 
         result_df = df.with_columns(pl.Series(class_name, class_values, dtype=pl.Utf8))
 

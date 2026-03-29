@@ -359,21 +359,21 @@ class TestContinuizeService:
     def test_one_hot_encoding(self, basic_dataset):
         from portakal_app.data.services.continuize_service import ContinuizeService
 
-        result = ContinuizeService().continuize(basic_dataset, discrete_method="One-hot encoding")
+        result = ContinuizeService().continuize(basic_dataset, discrete_preset="One-hot encoding")
         assert result.column_count > basic_dataset.column_count
         assert any("city=" in c for c in result.dataframe.columns)
 
     def test_ordinal_encoding(self, basic_dataset):
         from portakal_app.data.services.continuize_service import ContinuizeService
 
-        result = ContinuizeService().continuize(basic_dataset, discrete_method="Treat as ordinal")
+        result = ContinuizeService().continuize(basic_dataset, discrete_preset="Treat as ordinal")
         assert result.dataframe["city"].dtype.is_numeric()
 
     def test_normalize_continuous(self, numeric_dataset):
         from portakal_app.data.services.continuize_service import ContinuizeService
 
         result = ContinuizeService().continuize(
-            numeric_dataset, continuous_method="Normalize to [0, 1]"
+            numeric_dataset, continuous_preset="Normalize to interval [0, 1]"
         )
         x_vals = result.dataframe["x"].to_list()
         assert min(x_vals) == pytest.approx(0.0)

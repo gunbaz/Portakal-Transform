@@ -50,11 +50,12 @@ class FormulaService:
             return dataset
 
         for formula in formulas:
-            col_name = str(formula.get("name", "")).strip()
-            expr_str = str(formula.get("expr", "")).strip()
-            # is_meta isn't natively supported in standard polars without custom metadata,
-            # but we parse it for forward compatibility and to match UI payload.
-            is_meta = bool(formula.get("is_meta", False))
+            if isinstance(formula, (tuple, list)):
+                col_name = str(formula[0]).strip() if len(formula) > 0 else ""
+                expr_str = str(formula[1]).strip() if len(formula) > 1 else ""
+            else:
+                col_name = str(formula.get("name", "")).strip()
+                expr_str = str(formula.get("expr", "")).strip()
 
             if not col_name or not expr_str:
                 continue

@@ -166,15 +166,9 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         if dataset:
             self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             for col in dataset.domain.columns:
-                type_label = col.logical_type
-                if type_label == "numeric":
-                    type_label = "Num"
-                elif type_label == "categorical":
-                    type_label = "Cat"
-                elif type_label == "text":
-                    type_label = "Txt"
-                elif type_label == "datetime":
-                    type_label = "Time"
+                if col.logical_type not in ("categorical", "text"):
+                    continue
+                type_label = "Cat" if col.logical_type == "categorical" else "Txt"
                 self._source_combo.addItem(f"{col.name} ({type_label})", userData=col.name)
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
@@ -258,7 +252,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             return
 
         source_col = self._source_combo.currentData()
-        rules = [row.get_rule() for row in self._rule_rows if row.pattern_edit.text()]
+        rules = [row.get_rule() for row in self._rule_rows if row.label_edit.text() or row.pattern_edit.text()]
 
         try:
             self._output_dataset, counts = self._service.create_class(
@@ -274,7 +268,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             # Update counts on rows
             valid_idx = 0
             for row in self._rule_rows:
-                if row.pattern_edit.text():
+                if row.label_edit.text() or row.pattern_edit.text():
                     row.count_label.setText(str(counts.get(valid_idx, 0)))
                     valid_idx += 1
                 else:

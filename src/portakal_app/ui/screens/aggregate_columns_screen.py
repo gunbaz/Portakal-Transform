@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -18,6 +20,11 @@ from portakal_app.data.services.aggregate_columns_service import OPERATIONS, Agg
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 from portakal_app.ui import i18n
 from portakal_app.ui.shared.type_icons import type_badge_icon
+
+# Selection modes (matching Orange3)
+_SEL_ALL = 0
+_SEL_ALL_META = 1
+_SEL_MANUAL = 2
 
 
 class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
@@ -41,6 +48,20 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         cols_layout = QVBoxLayout(cols_group)
         cols_layout.setContentsMargins(10, 10, 10, 10)
         cols_layout.setSpacing(8)
+
+        # Radio buttons for selection mode (like Orange3)
+        self._sel_group = QButtonGroup(self)
+        self._radio_all = QRadioButton(i18n.t("All"))
+        self._radio_all_meta = QRadioButton(i18n.t("All, including meta attributes"))
+        self._radio_manual = QRadioButton(i18n.t("Selected variables"))
+        self._radio_manual.setChecked(True)
+        self._sel_group.addButton(self._radio_all, _SEL_ALL)
+        self._sel_group.addButton(self._radio_all_meta, _SEL_ALL_META)
+        self._sel_group.addButton(self._radio_manual, _SEL_MANUAL)
+        cols_layout.addWidget(self._radio_all)
+        cols_layout.addWidget(self._radio_all_meta)
+        cols_layout.addWidget(self._radio_manual)
+        self._sel_group.idClicked.connect(self._on_selection_mode_changed)
 
         self._column_list = QListWidget()
         self._column_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
@@ -80,6 +101,31 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
 
+    def _on_selection_mode_changed(self, mode_id: int) -> None:
+        self._column_list.setEnabled(mode_id == _SEL_MANUAL)
+
+    def _get_selected_columns(self) -> list[str]:
+        """Return the list of column names based on current selection mode."""
+        if self._dataset_handle is None:
+            return []
+        mode = self._sel_group.checkedId()
+        if mode == _SEL_ALL:
+            return [
+                col.name for col in self._dataset_handle.domain.columns
+                if col.logical_type == "numeric" and col.role != "meta"
+            ]
+        if mode == _SEL_ALL_META:
+            return [
+                col.name for col in self._dataset_handle.domain.columns
+                if col.logical_type == "numeric"
+            ]
+        # _SEL_MANUAL
+        return [
+            self._column_list.item(i).text()
+            for i in range(self._column_list.count())
+            if self._column_list.item(i).isSelected()
+        ]
+
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
         if payload is not None and dataset is self._dataset_handle:
@@ -95,6 +141,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
                     item = QListWidgetItem(type_badge_icon(col.logical_type), col.name)
                     item.setSelected(True)
                     self._column_list.addItem(item)
+            self._column_list.setEnabled(self._sel_group.checkedId() == _SEL_MANUAL)
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
@@ -110,11 +157,18 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         ]
         return {
             "columns": selected,
+            "selection_mode": self._sel_group.checkedId(),
             "operation": self._op_combo.currentText(),
             "output_name": self._output_name.text(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
+        mode = int(payload.get("selection_mode", _SEL_MANUAL))
+        btn = self._sel_group.button(mode)
+        if btn is not None:
+            btn.setChecked(True)
+        self._column_list.setEnabled(mode == _SEL_MANUAL)
+
         cols = payload.get("columns", [])
         if isinstance(cols, list):
             for i in range(self._column_list.count()):
@@ -138,11 +192,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             self._notify_output_changed()
             return
 
-        selected = [
-            self._column_list.item(i).text()
-            for i in range(self._column_list.count())
-            if self._column_list.item(i).isSelected()
-        ]
+        selected = self._get_selected_columns()
 
         self._output_dataset = self._service.aggregate(
             self._dataset_handle,

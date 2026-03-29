@@ -85,7 +85,7 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
 
         self._func_combo = QComboBox()
         self._func_combo.addItem(i18n.t("Select Function"))
-        all_funcs = sorted(list(_SAFE_MATH.keys()) + list(_SAFE_BUILTINS.keys()) + ["col"])
+        all_funcs = sorted(list(_SAFE_MATH.keys()) + list(_SAFE_BUILTINS.keys()))
         self._func_combo.addItems(all_funcs)
         self._func_combo.activated.connect(self._on_func_selected)
         bottom_row.addWidget(self._func_combo, 1)
@@ -193,8 +193,9 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _on_col_selected(self, index: int):
         if index > 0:
-            text = self._col_combo.itemText(index)
-            self._expr_edit.insert(f"col('{text}')")
+            col_name = self._col_combo.itemData(index) or self._col_combo.itemText(index)
+            safe_name = col_name.replace(" ", "_").replace("-", "_")
+            self._expr_edit.insert(safe_name)
             self._col_combo.setCurrentIndex(0)
             self._on_editor_changed()
 

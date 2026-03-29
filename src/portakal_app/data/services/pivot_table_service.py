@@ -64,13 +64,13 @@ def _get_agg_expr(col_name: str, agg: str) -> pl.Expr:
     col = pl.col(col_name)
     alias = f"__{agg.lower()}__"
     if agg == "Sum":
-        return col.sum().alias(alias)
+        return col.sum().round(10).alias(alias)
     if agg == "Mean":
-        return col.mean().alias(alias)
+        return col.mean().round(10).alias(alias)
     if agg == "Min":
         return col.min().alias(alias)
     if agg == "Max":
         return col.max().alias(alias)
     if agg == "Median":
-        return col.median().alias(alias)
+        return col.median().round(10).alias(alias)
     return col.count().alias(alias)

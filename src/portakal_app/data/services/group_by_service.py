@@ -64,13 +64,13 @@ def _build_agg_expr(col_name: str, agg: str) -> pl.Expr | None:
     col = pl.col(col_name)
     
     if agg == "Mean":
-        return col.mean().alias(alias)
+        return col.mean().round(10).alias(alias)
     if agg == "Median":
-        return col.median().alias(alias)
+        return col.median().round(10).alias(alias)
     if agg == "Q1":
-        return col.quantile(0.25).alias(alias)
+        return col.quantile(0.25).round(10).alias(alias)
     if agg == "Q3":
-        return col.quantile(0.75).alias(alias)
+        return col.quantile(0.75).round(10).alias(alias)
     if agg == "Min. value":
         return col.min().alias(alias)
     if agg == "Max. value":
@@ -78,11 +78,11 @@ def _build_agg_expr(col_name: str, agg: str) -> pl.Expr | None:
     if agg == "Mode":
         return col.drop_nulls().mode().first().alias(alias)
     if agg == "Standard deviation":
-        return col.std().alias(alias)
+        return col.std().round(10).alias(alias)
     if agg == "Variance":
-        return col.var().alias(alias)
+        return col.var().round(10).alias(alias)
     if agg == "Sum":
-        return col.sum().alias(alias)
+        return col.sum().round(10).alias(alias)
     if agg == "Concatenate":
         # Convert all to string, drop nulls, and join with space
         return col.drop_nulls().cast(pl.String).str.join(" ").alias(alias)

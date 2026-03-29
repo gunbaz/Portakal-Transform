@@ -267,6 +267,17 @@ QCheckBox::indicator:checked {
 QCheckBox::indicator:unchecked {
     background: #fffdf9;
 }
+QCheckBox:disabled {
+    color: #b0a99e;
+}
+QCheckBox::indicator:disabled {
+    border-color: #c8c0b4;
+    background: #eae7e1;
+}
+QCheckBox::indicator:disabled:checked {
+    border-color: #c8c0b4;
+    background: #eae7e1;
+}
 QRadioButton {
     spacing: 8px;
 }
@@ -288,6 +299,13 @@ QRadioButton::indicator:checked {
 }
 QRadioButton::indicator:unchecked {
     background: #fffdf9;
+}
+QRadioButton:disabled {
+    color: #b0a99e;
+}
+QRadioButton::indicator:disabled {
+    border-color: #c8c0b4;
+    background: #eae7e1;
 }
 QPushButton#fileSourceActionButton {
     background-color: #f5ead5;

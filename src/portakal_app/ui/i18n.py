@@ -443,6 +443,9 @@ class I18nManager(QObject):
                 "No output.": "Çıktı yok.",
 
                 # ── Aggregate Columns ──
+                "All": "Tümü",
+                "All, including meta attributes": "Meta öznitelikler dahil tümü",
+                "Selected variables": "Seçili değişkenler",
                 "Aggregation": "Toplama",
                 "Operation:": "İşlem:",
                 "Mean": "Ortalama",
