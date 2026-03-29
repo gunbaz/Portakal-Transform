@@ -28,7 +28,10 @@ class FileImportService:
 
         file_format = self._detect_format(source_path)
         if file_format in {"csv", "tsv", "tab"}:
-            return self.load_delimited_text(path)
+            options = None
+            if file_format in {"tsv", "tab"}:
+                options = CSVImportOptions(delimiter="\t")
+            return self.load_delimited_text(path, options=options)
 
         cache_path = self._cache_path_for(source_path)
 

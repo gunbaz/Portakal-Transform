@@ -273,8 +273,6 @@ def _infer_logical_type(series: pl.Series, unique_count: int) -> str:
     if "duration" in dtype_name:
         return "duration"
     if any(token in dtype_name for token in ("int", "float", "decimal")):
-        if "int" in dtype_name and 0 < unique_count <= LOW_CARDINALITY_LIMIT:
-            return "categorical"
         return "numeric"
     if dtype_name in {"categorical", "enum"}:
         return "categorical"

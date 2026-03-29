@@ -62,13 +62,10 @@ class PythonScriptService:
 
         if QtCore is not None:
             # Expose standard Qt classes to the python script so legacy interactive scripts work
-            namespace.update({
-                "QEvent": QtCore.QEvent,
-                "Qt": QtCore.Qt,
-                "QtCore": QtCore,
-                "QtWidgets": QtWidgets,
-                "QtGui": QtGui,
-            })
+            for module in (QtCore, QtWidgets, QtGui):
+                for name in dir(module):
+                    if not name.startswith("_") and name not in namespace:
+                        namespace[name] = getattr(module, name)
 
         stdout_capture = io.StringIO()
         error_msg = ""

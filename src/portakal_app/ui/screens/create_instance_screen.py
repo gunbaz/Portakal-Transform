@@ -190,6 +190,23 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
+        # Explicit cross-platform styling (Linux/GTK ignores palette-based
+        # alternating row colours; setting them via stylesheet fixes this).
+        self._table.setStyleSheet("""
+            QTableWidget {
+                alternate-background-color: rgba(0, 0, 0, 0.04);
+                background-color: palette(base);
+                gridline-color: rgba(0, 0, 0, 0.08);
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+            QHeaderView::section {
+                background-color: palette(button);
+                border: 1px solid palette(mid);
+                padding: 4px;
+            }
+        """)
         layout.addWidget(self._table, 1)
 
         btn_row = QHBoxLayout()

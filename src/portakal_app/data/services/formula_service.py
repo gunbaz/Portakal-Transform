@@ -53,15 +53,27 @@ class FormulaService:
             if isinstance(formula, (tuple, list)):
                 col_name = str(formula[0]).strip() if len(formula) > 0 else ""
                 expr_str = str(formula[1]).strip() if len(formula) > 1 else ""
+                var_type = "numeric"
             else:
                 col_name = str(formula.get("name", "")).strip()
                 expr_str = str(formula.get("expr", "")).strip()
+                var_type = str(formula.get("type", "numeric"))
 
             if not col_name or not expr_str:
                 continue
             try:
                 expr = _parse_formula(expr_str, df.columns)
                 df = df.with_columns(expr.alias(col_name))
+                # Cast column to the user-chosen type
+                if var_type == "numeric":
+                    df = df.with_columns(pl.col(col_name).cast(pl.Float64, strict=False))
+                elif var_type in ("text", "categorical"):
+                    df = df.with_columns(pl.col(col_name).cast(pl.Utf8, strict=False))
+                elif var_type == "datetime":
+                    try:
+                        df = df.with_columns(pl.col(col_name).str.to_datetime(strict=False))
+                    except Exception:
+                        pass  # keep as-is if datetime parse fails
             except Exception:
                 df = df.with_columns(pl.lit(None).alias(col_name))
 

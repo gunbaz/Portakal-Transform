@@ -38,13 +38,25 @@ class CreateInstanceService:
             else:
                 row_data[col_name] = [None]
 
-        schema = {c: df_schema.get_column(c).dtype for c in df_schema.columns}
+        schema = {}
+        for c in df_schema.columns:
+            dtype = df_schema.get_column(c).dtype
+            # Widen all integer types to Float64 so that float values
+            # (e.g. 78.91 from the spin-box) never clash with Int64.
+            # Orange3 stores everything as np.float64 internally.
+            if dtype.is_integer():
+                dtype = pl.Float64
+            schema[c] = dtype
         new_row = pl.DataFrame(row_data, schema=schema)
 
         if append_to_data and data is not None:
-            # We must ensure data matches the schema of new_row before vertical concat
+            # Cast original data's integer columns to Float64 too
+            data_df = data.dataframe
+            for c in data_df.columns:
+                if data_df.get_column(c).dtype.is_integer():
+                    data_df = data_df.with_columns(pl.col(c).cast(pl.Float64))
             try:
-                result = pl.concat([data.dataframe, new_row], how="vertical_relaxed")
+                result = pl.concat([data_df, new_row], how="vertical_relaxed")
             except Exception:
                 result = new_row
         else:
