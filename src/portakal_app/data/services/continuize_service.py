@@ -34,23 +34,36 @@ class ContinuizeService:
         discrete_preset: str = "First value as base",
         continuous_preset: str = "Keep as it is",
         column_methods: dict[str, str] | None = None,
+        categorical_orders: dict[str, list[str]] | None = None,
     ) -> DatasetHandle:
         df = dataset.dataframe
         result_series: list[pl.Series] = []
         col_methods = column_methods or {}
+        orders = categorical_orders or {}
 
+        columns_to_process = {col.name: col for col in dataset.domain.columns}
+        
         for col_name in df.columns:
             series = df.get_column(col_name)
+            col_schema = columns_to_process.get(col_name)
+            
+            # Skip ID-like / Text columns as per Orange3 spec
+            if col_schema and col_schema.logical_type == "text":
+                result_series.append(series)
+                continue
+
             method = col_methods.get(col_name, "Use preset")
 
             if series.dtype.is_numeric():
                 if method == "Use preset":
                     method = continuous_preset
                 result_series.extend(_transform_continuous(series, col_name, method))
-            elif series.dtype == pl.Utf8 or series.dtype == pl.Categorical:
+            elif series.dtype == (pl.Utf8) or series.dtype == pl.Categorical:
                 if method == "Use preset":
                     method = discrete_preset
-                result_series.extend(_transform_discrete(series, col_name, method))
+                
+                order = orders.get(col_name)
+                result_series.extend(_transform_discrete(series, col_name, method, order=order))
             else:
                 result_series.append(series)
 
@@ -112,7 +125,7 @@ def _transform_continuous(series: pl.Series, name: str, method: str) -> list[pl.
     return [series]
 
 
-def _transform_discrete(series: pl.Series, name: str, method: str) -> list[pl.Series]:
+def _transform_discrete(series: pl.Series, name: str, method: str, order: list[str] | None = None) -> list[pl.Series]:
     if method == "Keep categorical":
         return [series]
 
@@ -120,7 +133,16 @@ def _transform_discrete(series: pl.Series, name: str, method: str) -> list[pl.Se
         return []
 
     str_series = series.cast(pl.Utf8).fill_null("")
-    unique_vals = sorted(set(str_series.to_list()) - {""})
+    
+    if order is not None:
+        # Filter provided order by what's actually in current data
+        current_set = set(str_series.to_list())
+        unique_vals = [v for v in order if v in current_set and v != ""]
+        # Add any missing values that are in data but weren't in order
+        remaining = sorted(set(current_set) - set(unique_vals) - {""})
+        unique_vals.extend(remaining)
+    else:
+        unique_vals = sorted(set(str_series.to_list()) - {""})
 
     if not unique_vals:
         return [series]
@@ -133,14 +155,14 @@ def _transform_discrete(series: pl.Series, name: str, method: str) -> list[pl.Se
 
     if method == "Treat as ordinal":
         mapping = {v: float(i) for i, v in enumerate(unique_vals)}
-        values = [mapping.get(str(v), None) for v in str_series.to_list()]
+        values = [mapping.get(str(v), None) if str(v) != "" else None for v in series.cast(pl.Utf8).to_list()]
         return [pl.Series(name, values, dtype=pl.Float64)]
 
     if method == "Treat as normalized ordinal":
         n = len(unique_vals)
         divisor = max(n - 1, 1)
         mapping = {v: float(i) / divisor for i, v in enumerate(unique_vals)}
-        values = [mapping.get(str(v), None) for v in str_series.to_list()]
+        values = [mapping.get(str(v), None) if str(v) != "" else None for v in series.cast(pl.Utf8).to_list()]
         return [pl.Series(name, values, dtype=pl.Float64)]
 
     if method == "One-hot encoding":
@@ -152,9 +174,8 @@ def _transform_discrete(series: pl.Series, name: str, method: str) -> list[pl.Se
         return result
 
     if method == "First value as base":
-        if len(unique_vals) <= 1:
+        if len(unique_vals) < 2: # Should be exactly N-1; if logic says base is needed skip first
             return []
-        base = unique_vals[0]
         result = []
         for val in unique_vals[1:]:
             col_name = f"{name}={val}"
@@ -180,3 +201,5 @@ def _transform_discrete(series: pl.Series, name: str, method: str) -> list[pl.Se
         return result
 
     return [series]
+
+

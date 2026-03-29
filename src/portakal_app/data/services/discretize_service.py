@@ -120,12 +120,17 @@ def _equal_freq_bin(series: pl.Series, name: str, n_bins: int) -> pl.Series:
         return pl.Series(name, ["?"] * series.len(), dtype=pl.Utf8)
 
     sorted_vals = sorted(non_null.to_list())
-    bin_size = max(1, len(sorted_vals) // n_bins)
+    n = len(sorted_vals)
+    bin_size = max(1, n // n_bins)
     thresholds: list[float] = []
     
     for i in range(1, n_bins):
-        idx = min(i * bin_size, len(sorted_vals) - 1)
-        thresholds.append(float(sorted_vals[idx]))
+        idx = i * bin_size
+        if idx < n:
+            # Orange style boundary: average of the two adjacent points (left + right) / 2
+            # This ensures the cut point is between the values and not on a value.
+            threshold = (float(sorted_vals[idx - 1]) + float(sorted_vals[idx])) / 2.0
+            thresholds.append(threshold)
 
     if not thresholds:
         return pl.Series(name, [f"[{sorted_vals[0]:.2f}]"] * series.len(), dtype=pl.Utf8)

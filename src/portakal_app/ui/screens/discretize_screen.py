@@ -117,9 +117,17 @@ class DiscretizeConfigurator(QGroupBox):
             if "edit" in controls: controls["edit"].setEnabled(is_enabled)
             if "combo" in controls: controls["combo"].setEnabled(is_enabled)
 
-    def _populate_list(self, cols: list[str]) -> None:
+    def _populate_list(self, cols: list[str], has_target: bool = False) -> None:
         self.list_widget.clear()
         
+        # Entropy vs. MDL (Index 7) requires a target variable
+        entropy_rb = self.radio_buttons[7]
+        entropy_rb.setEnabled(has_target)
+        if not has_target:
+            entropy_rb.setToolTip(i18n.t("A target variable is required for this method."))
+        else:
+            entropy_rb.setToolTip("")
+
         preset_item = QListWidgetItem(i18n.tf("★ Default setting: {method}", method=self.preset_method))
         preset_item.setData(Qt.ItemDataRole.UserRole, "__PRESET__")
         self.list_widget.addItem(preset_item)
@@ -165,9 +173,9 @@ class DiscretizeConfigurator(QGroupBox):
             if "edit" in w_dict:
                 w_dict["edit"].blockSignals(True)
                 if idx == 3 and "width" in conf:
-                   w_dict["edit"].setText(str(conf["width"]))
+                    w_dict["edit"].setText(str(conf["width"]))
                 elif idx == 8 and "cuts" in conf:
-                   w_dict["edit"].setText(str(conf["cuts"]))
+                    w_dict["edit"].setText(str(conf["cuts"]))
                 w_dict["edit"].blockSignals(False)
                 
             self._update_widget_enabled_states()
@@ -197,9 +205,9 @@ class DiscretizeConfigurator(QGroupBox):
             conf["n_bins"] = w_dict["spin"].value()
         if "edit" in w_dict:
             if method_idx == 3:
-               conf["width"] = w_dict["edit"].text()
+                conf["width"] = w_dict["edit"].text()
             elif method_idx == 8:
-               conf["cuts"] = w_dict["edit"].text()
+                conf["cuts"] = w_dict["edit"].text()
                
         if col_id == "__PRESET__":
             if method == "Use default setting":
@@ -276,11 +284,13 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
             df = dataset.dataframe
             num_cols = [c for c in df.columns if df.get_column(c).dtype.is_numeric()]
-            self.configurator._populate_list(num_cols)
+            # Detect if there's a target column in the data domain
+            has_target = any(col.role == "target" for col in dataset.domain.columns)
+            self.configurator._populate_list(num_cols, has_target=has_target)
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
-            self.configurator._populate_list([])
+            self.configurator._populate_list([], has_target=False)
 
         if self.cb_apply_auto.isChecked():
             self._apply()

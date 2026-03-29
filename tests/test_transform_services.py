@@ -81,7 +81,7 @@ class TestPurgeDomainService:
 
         purged, stats = PurgeDomainService().purge(dataset, remove_constant_features=True)
         assert "b" not in purged.dataframe.columns
-        assert stats["removed"] >= 1
+        assert stats["features"]["removed"] >= 1
 
 
 # 4. Unique
@@ -291,11 +291,11 @@ class TestGroupByService:
         result = GroupByService().group_by(
             basic_dataset,
             group_columns=["city"],
-            aggregations={"score": ["Mean"], "age": ["Min", "Max"]},
+            aggregations={"score": ["Mean"], "age": ["Min. value", "Max. value"]},
         )
         assert result.row_count == 3
         assert "score_mean" in result.dataframe.columns
-        assert "age_min" in result.dataframe.columns
+        assert "age_min_value" in result.dataframe.columns
 
 
 # 13. Pivot Table
@@ -385,13 +385,18 @@ class TestDiscretizeService:
     def test_equal_width(self, numeric_dataset):
         from portakal_app.data.services.discretize_service import DiscretizeService
 
-        result = DiscretizeService().discretize(numeric_dataset, method="Equal Width", n_bins=3)
+        result = DiscretizeService().discretize(
+            numeric_dataset,
+            default_method="Equal width",
+            column_methods={"x": {"method": "Equal width", "n_bins": 3}}
+        )
         assert result.dataframe["x"].dtype == pl.Utf8  # binned → string
 
-    def test_remove_numeric(self, numeric_dataset):
-        from portakal_app.data.services.discretize_service import DiscretizeService
-
-        result = DiscretizeService().discretize(numeric_dataset, method="Remove")
+        result = DiscretizeService().discretize(
+            numeric_dataset,
+            default_method="Keep numeric",
+            column_methods={"x": {"method": "Remove"}}
+        )
         assert "x" not in result.dataframe.columns
         assert "label" in result.dataframe.columns
 
@@ -420,7 +425,7 @@ class TestCreateClassService:
         path.write_text("email\nalice@gmail.com\nbob@yahoo.com\ncharlie@gmail.com\n", encoding="utf-8")
         dataset = FileImportService().load(str(path))
 
-        result = CreateClassService().create_class(
+        result, error = CreateClassService().create_class(
             dataset,
             source_column="email",
             rules=[("Gmail", "gmail"), ("Yahoo", "yahoo")],
@@ -442,7 +447,7 @@ class TestCreateInstanceService:
         dataset = FileImportService().load(str(path))
 
         result = CreateInstanceService().create(
-            dataset, values={"age": "28", "score": "75", "city": "Bursa"}, append_to_data=False
+            data=dataset, values={"age": "28", "score": "75", "city": "Bursa"}, append_to_data=False
         )
         assert result.row_count == 1
 
@@ -454,7 +459,7 @@ class TestCreateInstanceService:
         dataset = FileImportService().load(str(path))
 
         result = CreateInstanceService().create(
-            dataset, values={"age": "28", "score": "75", "city": "Bursa"}, append_to_data=True
+            data=dataset, values={"age": "28", "score": "75", "city": "Bursa"}, append_to_data=True
         )
         assert result.row_count == dataset.row_count + 1
 
@@ -604,4 +609,4 @@ class TestPythonScriptService:
         result = PythonScriptService().execute(
             numeric_dataset, code="out_data = 'not a dataframe'"
         )
-        assert "must be a polars DataFrame" in result.error
+        assert "must be a polars or orange DataFrame" in result.error

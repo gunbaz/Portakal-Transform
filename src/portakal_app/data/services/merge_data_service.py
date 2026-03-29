@@ -150,8 +150,7 @@ class MergeDataService:
                 schema = right_schemas[col_name]
             elif col_name.endswith("_right") and col_name[:-6] in right_schemas:
                 orig_schema = right_schemas[col_name[:-6]]
-                import dataclasses
-                schema = dataclasses.replace(orig_schema, name=col_name)
+                schema = replace(orig_schema, name=col_name)
             else:
                 s = result.get_column(col_name)
                 schema = ColumnSchema(

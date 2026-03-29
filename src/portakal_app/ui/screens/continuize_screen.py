@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QSplitter,
     QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
 import polars as pl
@@ -28,6 +30,28 @@ from portakal_app.data.services.continuize_service import (
 )
 from portakal_app.ui.screens.node_screen import WorkflowNodeScreenSupport
 from portakal_app.ui import i18n
+
+
+class CategoryOrderDialog(QDialog):
+    def __init__(self, col_name: str, values: list[str], parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(i18n.tf("Order for {col}", col=col_name))
+        layout = QVBoxLayout(self)
+        
+        layout.addWidget(QLabel(i18n.t("Drag and drop to reorder categories (Ordinal logic):")))
+        self.list = QListWidget()
+        self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        for v in values:
+            self.list.addItem(v)
+        layout.addWidget(self.list)
+        
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        layout.addWidget(bb)
+        
+    def get_order(self) -> list[str]:
+        return [self.list.item(i).text() for i in range(self.list.count())]
 
 
 class TypeConfigurator(QGroupBox):
@@ -54,7 +78,9 @@ class TypeConfigurator(QGroupBox):
 
         self.preset_value = preset_initial
         self.overrides: dict[str, str] = {}
+        self.categorical_orders: dict[str, list[str]] = {}
         self._all_cols: list[str] = []
+        self._dataset_handle: DatasetHandle | None = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -86,6 +112,13 @@ class TypeConfigurator(QGroupBox):
             rb.clicked.connect(self._on_radio_change)
 
         right_panel.addStretch(1)
+        
+        if is_discrete:
+            self.btn_order = QPushButton(i18n.t("Values/Order..."))
+            self.btn_order.clicked.connect(self._on_order_click)
+            self.btn_order.setEnabled(False)
+            right_panel.addWidget(self.btn_order)
+            
         layout.addLayout(right_panel, 1)
 
         self._populate_list([])
@@ -152,6 +185,32 @@ class TypeConfigurator(QGroupBox):
             self.radio_buttons[idx].setChecked(True)
         except ValueError:
             pass
+            
+        if self.is_discrete:
+            # Enable order button only if exactly one column (not preset) is selected
+            self.btn_order.setEnabled(len(col_ids) == 1 and "__PRESET__" not in col_ids)
+
+    def _on_order_click(self) -> None:
+        selected = self.list_widget.selectedItems()
+        if not selected or not self._dataset_handle: return
+        col_id = selected[0].data(Qt.ItemDataRole.UserRole)
+        
+        # Get current unique values for the column
+        series = self._dataset_handle.dataframe.get_column(col_id)
+        current_vals = sorted(set(series.cast(pl.Utf8).drop_nulls().to_list()))
+        
+        # If we already have a manual order, use it as baseline, but sync with current data
+        saved_order = self.categorical_orders.get(col_id, [])
+        if saved_order:
+            # Reconstruct order ensuring all current values are included
+            values = [v for v in saved_order if v in current_vals]
+            values += [v for v in current_vals if v not in values]
+        else:
+            values = current_vals
+            
+        dlg = CategoryOrderDialog(col_id, values, self)
+        if dlg.exec():
+            self.categorical_orders[col_id] = dlg.get_order()
 
     def _on_radio_change(self) -> None:
         selected = self.list_widget.selectedItems()
@@ -263,8 +322,9 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
             for col in dataset.domain.columns:
                 if col.logical_type == "numeric":
                     num_cols.append(col.name)
-                elif col.logical_type in ("categorical", "text"):
+                elif col.logical_type == "categorical":
                     cat_cols.append(col.name)
+            self.cat_config._dataset_handle = dataset
             self.cat_config._populate_list(cat_cols)
             self.num_config._populate_list(num_cols)
         else:
@@ -285,6 +345,7 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
             "continuous_preset": self.num_config.preset_value,
             "discrete_overrides": self.cat_config.overrides,
             "continuous_overrides": self.num_config.overrides,
+            "categorical_orders": self.cat_config.categorical_orders,
             "auto_apply": self.cb_apply_auto.isChecked()
         }
 
@@ -294,6 +355,7 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
 
         self.cat_config.overrides = payload.get("discrete_overrides", {})
         self.num_config.overrides = payload.get("continuous_overrides", {})
+        self.cat_config.categorical_orders = payload.get("categorical_orders", {})
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         # Update visuals for presets
