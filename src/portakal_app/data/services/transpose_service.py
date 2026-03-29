@@ -40,10 +40,24 @@ class TransposeService:
         )
 
         if names:
-            new_col_names = [auto_column_name] + [
-                str(n) if n is not None else f"row_{i}"
-                for i, n in enumerate(names)
-            ]
+            seen = {}
+            new_col_names = [auto_column_name]
+            seen[auto_column_name] = 1
+            for i, n in enumerate(names):
+                base = str(n) if n is not None else f"row_{i}"
+                if base not in seen:
+                    new_col_names.append(base)
+                    seen[base] = 1
+                else:
+                    count = seen[base]
+                    candidate = f"{base} ({count})"
+                    while candidate in seen:
+                        count += 1
+                        candidate = f"{base} ({count})"
+                    seen[base] = count + 1
+                    seen[candidate] = 1
+                    new_col_names.append(candidate)
+
             if len(new_col_names) == len(transposed.columns):
                 transposed.columns = new_col_names
         else:

@@ -108,6 +108,7 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
             self._apply()
 
     def set_input_payload(self, payload) -> None:
+        import polars as pl
         dataset = payload.dataset if payload is not None else None
         self._dataset_handle = dataset
         self._output_dataset = None
@@ -117,9 +118,17 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
 
         if dataset:
             self._dataset_label.setText(i18n.tf("Dataset: {name}", name=dataset.display_name))
+            df = dataset.dataframe
             for col in dataset.domain.columns:
                 if col.logical_type in ("text", "categorical"):
-                    self._id_combo.addItem(col.name)
+                    try:
+                        s = df.get_column(col.name).drop_nulls()
+                        if s.dtype in (pl.Utf8, pl.Categorical, pl.Enum):
+                            s = s.filter(s.cast(pl.Utf8) != "")
+                        if len(s) > 0 and s.n_unique() == len(s):
+                            self._id_combo.addItem(col.name)
+                    except Exception:
+                        pass
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
