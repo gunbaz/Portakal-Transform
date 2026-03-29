@@ -49,11 +49,26 @@ class PythonScriptService:
 
         in_df = dataset.dataframe if dataset else None
 
+        try:
+            from PySide6 import QtCore, QtWidgets, QtGui
+        except ImportError:
+            QtCore = QtWidgets = QtGui = None
+
         namespace = {
             "in_data": in_df,
             "out_data": None,
             "pl": pl,
         }
+
+        if QtCore is not None:
+            # Expose standard Qt classes to the python script so legacy interactive scripts work
+            namespace.update({
+                "QEvent": QtCore.QEvent,
+                "Qt": QtCore.Qt,
+                "QtCore": QtCore,
+                "QtWidgets": QtWidgets,
+                "QtGui": QtGui,
+            })
 
         stdout_capture = io.StringIO()
         error_msg = ""
