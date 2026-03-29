@@ -47,19 +47,43 @@ class ApplyDomainService:
                 target_dtype = _resolve_polars_dtype(tcol.dtype_repr)
                 if target_dtype is not None and src.dtype != target_dtype:
                     try:
-                        src = src.cast(target_dtype, strict=False)
+                        converted = src.cast(target_dtype, strict=False)
+                        # If strict=False turned a string column into 100% null (failed parsing),
+                        # assume the template used an ordinal encoding, so try fallback.
+                        if converted.null_count() == data.row_count and src.dtype in (pl.Utf8, pl.Categorical) and target_dtype in (pl.Int64, pl.Int32, pl.Float64):
+                            converted = src.cast(pl.Categorical).to_physical().cast(target_dtype)
+                        src = converted
                     except Exception:
                         pass  # keep original dtype if cast fails
                 result_series.append(src.alias(col_name))
             else:
-                # Column missing in data → null-filled
-                target_dtype = _resolve_polars_dtype(tcol.dtype_repr)
-                if target_dtype is None:
-                    target_dtype = pl.Utf8
-                null_series = pl.Series(
-                    col_name, [None] * data.row_count, dtype=target_dtype
-                )
-                result_series.append(null_series)
+                # Column missing in data. 
+                # Check if it is a dynamically generated one-hot encoded variable (from Continuize)
+                base_name = None
+                val = None
+                if "=" in col_name:
+                    splits = col_name.split("=", 1)
+                    if len(splits) == 2 and splits[0] in data_col_set:
+                        base_name, val = splits[0], splits[1]
+
+                if base_name is not None and val is not None:
+                    src = data_df.get_column(base_name)
+                    target_dtype = _resolve_polars_dtype(tcol.dtype_repr)
+                    if target_dtype is None:
+                        target_dtype = pl.Int64
+                    
+                    # Compute indicator matching Orange style OHE
+                    indicator = (src == val).fill_null(False).cast(target_dtype).alias(col_name)
+                    result_series.append(indicator)
+                else:
+                    # Column missing in data -> null-filled
+                    target_dtype = _resolve_polars_dtype(tcol.dtype_repr)
+                    if target_dtype is None:
+                        target_dtype = pl.Utf8
+                    null_series = pl.Series(
+                        col_name, [None] * data.row_count, dtype=target_dtype
+                    )
+                    result_series.append(null_series)
 
         if not result_series:
             empty = pl.DataFrame()
