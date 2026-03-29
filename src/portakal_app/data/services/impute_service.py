@@ -15,6 +15,7 @@ class ImputeService:
         *,
         default_method: str = "Average/Most frequent",
         default_fixed_value: str = "0",
+        default_fixed_value_cat: str = "N/A",
         seed: int | None = None,
         column_methods: dict[str, dict[str, str]] | None = None,
     ) -> DatasetHandle:
@@ -22,11 +23,6 @@ class ImputeService:
         rng = random.Random(seed)
         col_methods = column_methods or {}
 
-        # Handle global row drop (if drop happens, do it first or let it be per-column if needed?
-        # Actually in Orange, "Remove instances with unknown values" is a valid method.
-        # If it's a default method AND there are any columns using it, we drop rows.
-        # If a column specifically overrides to "Remove instances", we drop rows where THAT column is null.
-        
         result = df
         
         cols_to_drop_for = []
@@ -51,6 +47,7 @@ class ImputeService:
             method_info = col_methods.get(col_name, {})
             method = method_info.get("method", default_method)
             fixed_value = method_info.get("fixed_value", default_fixed_value)
+            fixed_value_cat = method_info.get("fixed_value_cat", default_fixed_value_cat)
 
             if method == "Don't impute" or method == "Remove instances with unknown values":
                 continue
@@ -59,11 +56,13 @@ class ImputeService:
                 if series.dtype.is_numeric():
                     fill_val = series.mean()
                     if fill_val is not None:
+                        fill_val = round(fill_val, 2)
                         result = result.with_columns(pl.col(col_name).fill_null(fill_val))
                 else:
                     mode_val = series.drop_nulls().mode()
                     if mode_val.len() > 0:
-                        result = result.with_columns(pl.col(col_name).fill_null(mode_val[0]))
+                        result = result.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null(mode_val[0]).cast(series.dtype))
+                        
             elif method == "Fixed values":
                 if series.dtype.is_numeric():
                     try:
@@ -71,7 +70,8 @@ class ImputeService:
                     except ValueError:
                         pass
                 else:
-                    result = result.with_columns(pl.col(col_name).fill_null(fixed_value))
+                    result = result.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null(fixed_value_cat).cast(series.dtype))
+                    
             elif method == "Random values":
                 non_null = series.drop_nulls().to_list()
                 if non_null:
@@ -80,11 +80,21 @@ class ImputeService:
                         if v is None:
                             values[i] = rng.choice(non_null)
                     result = result.with_columns(pl.Series(col_name, values, dtype=series.dtype))
+                    
             elif method == "As a distinct value":
                 if series.dtype == pl.Utf8 or series.dtype == pl.Categorical:
                     # Missing treated as distinct value "N/A"
                     result = result.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null("N/A").cast(series.dtype))
-                # For numeric, there's no native "distinct value" so we skip or use a magic number. Skipped.
+                elif series.dtype.is_numeric():
+                    # For numeric, Orange creates an indicator variable and fills the original with the mean
+                    fill_val = series.mean()
+                    if fill_val is not None:
+                        fill_val = round(fill_val, 2)
+                        indicator = pl.when(pl.col(col_name).is_null()).then(pl.lit("undef")).otherwise(pl.lit("def")).alias(f"{col_name}_def")
+                        result = result.with_columns([
+                            pl.col(col_name).fill_null(fill_val),
+                            indicator
+                        ])
 
         return replace(
             dataset,

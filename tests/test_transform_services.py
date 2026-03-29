@@ -336,21 +336,21 @@ class TestImputeService:
     def test_average_imputation(self, missing_dataset):
         from portakal_app.data.services.impute_service import ImputeService
 
-        result = ImputeService().impute(missing_dataset, method="Average/Most frequent")
+        result = ImputeService().impute(missing_dataset, default_method="Average/Most frequent")
         remaining_nulls = sum(col.null_count for col in result.domain.columns)
         assert remaining_nulls == 0
 
     def test_fixed_value_imputation(self, missing_dataset):
         from portakal_app.data.services.impute_service import ImputeService
 
-        result = ImputeService().impute(missing_dataset, method="Fixed value", fixed_value="0")
+        result = ImputeService().impute(missing_dataset, default_method="Fixed values", default_fixed_value="0", default_fixed_value_cat="0")
         a_vals = result.dataframe["a"].to_list()
         assert None not in a_vals
 
     def test_drop_rows(self, missing_dataset):
         from portakal_app.data.services.impute_service import ImputeService
 
-        result = ImputeService().impute(missing_dataset, method="Drop rows with missing")
+        result = ImputeService().impute(missing_dataset, default_method="Remove instances with unknown values")
         assert result.row_count < missing_dataset.row_count
 
 

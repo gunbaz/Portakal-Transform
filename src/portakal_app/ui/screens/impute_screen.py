@@ -70,9 +70,14 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
             
             if method == "Fixed values":
                 self._fixed_edit = QLineEdit("0")
-                self._fixed_edit.setFixedWidth(80)
-                row.addWidget(QLabel(i18n.t(" value: ")))
+                self._fixed_edit.setFixedWidth(60)
+                row.addWidget(QLabel(i18n.t(" num: ")))
                 row.addWidget(self._fixed_edit)
+                
+                self._fixed_edit_cat = QLineEdit("N/A")
+                self._fixed_edit_cat.setFixedWidth(60)
+                row.addWidget(QLabel(i18n.t(" cat: ")))
+                row.addWidget(self._fixed_edit_cat)
             
             if method == "Random values":
                 row.addWidget(QLabel(i18n.t(" seed: ")))
@@ -173,6 +178,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "default_method": METHODS[self.default_group.checkedId()],
             "fixed_value": self._fixed_edit.text(),
+            "fixed_value_cat": self._fixed_edit_cat.text(),
             "seed": self._seed_spin.value(),
             "overrides": overrides,
             "auto_apply": self.cb_apply_auto.isChecked()
@@ -186,6 +192,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
             self.default_group.button(1).setChecked(True)
             
         self._fixed_edit.setText(str(payload.get("fixed_value", "0")))
+        self._fixed_edit_cat.setText(str(payload.get("fixed_value_cat", "N/A")))
         self._seed_spin.setValue(int(payload.get("seed", 42)))
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
         
@@ -222,7 +229,8 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
                 if method != "(Default)":
                     column_methods[col_name] = {
                         "method": method,
-                        "fixed_value": self._fixed_edit.text()
+                        "fixed_value": self._fixed_edit.text(),
+                        "fixed_value_cat": self._fixed_edit_cat.text()
                     }
 
         try:
@@ -230,16 +238,25 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
                 self._dataset_handle,
                 default_method=default_method,
                 default_fixed_value=self._fixed_edit.text(),
+                default_fixed_value_cat=self._fixed_edit_cat.text(),
                 seed=self._seed_spin.value(),
                 column_methods=column_methods,
             )
 
             remaining = sum(col.null_count for col in self._output_dataset.domain.columns)
-            self._result_label.setText(
-                f"Imputed. Remaining missing: {remaining} | Rows: {self._output_dataset.row_count}"
-            )
+            if remaining > 0:
+                self._result_label.setText(
+                    i18n.tf("Imputed. Warning: Data still contains missing values ({count}) | Rows: {rows}", count=remaining, rows=self._output_dataset.row_count)
+                )
+                self._result_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+            else:
+                self._result_label.setText(
+                    i18n.tf("Imputed completely. Rows: {rows}", rows=self._output_dataset.row_count)
+                )
+                self._result_label.setStyleSheet("color: palette(text); font-weight: normal;")
         except Exception as e:
             self._result_label.setText(f"Impute Failed: {e}")
+            self._result_label.setStyleSheet("")
             self._output_dataset = None
             
         self._notify_output_changed()
