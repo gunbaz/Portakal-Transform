@@ -301,7 +301,18 @@ class RemoveSparseEditor(StepEditor):
 class PCAEditor(StepEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(i18n.t("Principal Component Analysis"), parent)
-        self.layout.addWidget(QLabel(i18n.t("Not yet natively implemented in Portakal.")))
+        form = QFormLayout()
+        self.spin_n = QSpinBox()
+        self.spin_n.setRange(1, 10000)
+        self.spin_n.setValue(5)
+        form.addRow(QLabel(i18n.t("Components:")), self.spin_n)
+        self.layout.addLayout(form)
+
+    def parameters(self) -> dict[str, Any]:
+        return {"n_components": self.spin_n.value()}
+
+    def set_parameters(self, params: dict[str, Any]) -> None:
+        self.spin_n.setValue(int(params.get("n_components", 5)))
 
 
 class CUREditor(StepEditor):
@@ -329,10 +340,18 @@ class CUREditor(StepEditor):
         self.group.addButton(self.rb_prop, 2)
         self.layout.addWidget(box2)
 
+        err_form = QFormLayout()
+        self.spin_max_error = QDoubleSpinBox()
+        self.spin_max_error.setRange(0.01, 100.0)
+        self.spin_max_error.setValue(1.0)
+        self.spin_max_error.setSingleStep(0.1)
+        err_form.addRow(QLabel(i18n.t("Relative error:")), self.spin_max_error)
+        self.layout.addLayout(err_form)
+
     def parameters(self) -> dict[str, Any]:
         strategy = "Fixed" if self.rb_fixed.isChecked() else "Percentage"
         k = self.spin_fixed.value() if strategy == "Fixed" else self.spin_prop.value()
-        return {"strategy": strategy, "k": k}
+        return {"strategy": strategy, "k": k, "max_error": self.spin_max_error.value()}
 
     def set_parameters(self, params: dict[str, Any]) -> None:
         strategy = params.get("strategy", "Fixed")
@@ -342,6 +361,7 @@ class CUREditor(StepEditor):
         else:
             self.rb_prop.setChecked(True)
             self.spin_prop.setValue(float(params.get("k", 75.0)))
+        self.spin_max_error.setValue(float(params.get("max_error", 1.0)))
 
 
 def create_editor(step_name: str) -> StepEditor:
