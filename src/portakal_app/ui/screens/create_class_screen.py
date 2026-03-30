@@ -146,11 +146,26 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
+        # Auto-apply hooks
+        self._class_name.textChanged.connect(self._check_auto_apply)
+        self._source_combo.currentIndexChanged.connect(self._check_auto_apply)
+        self._use_regex.stateChanged.connect(self._check_auto_apply)
+        self._match_beginning.stateChanged.connect(self._check_auto_apply)
+        self._case_sensitive.stateChanged.connect(self._check_auto_apply)
+
+        # Footer
+        footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+        footer.addStretch(1)
+
         # Apply Button (Full width in Orange)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
-        layout.addWidget(self._apply_button)
+        footer.addWidget(self._apply_button)
+        layout.addLayout(footer)
         
         # Add 2 initial empty rules to mimic Oranges initialization screenshot
         self._add_rule()
@@ -175,9 +190,11 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
 
         self._source_combo.blockSignals(False)
+        self._apply()
 
-    def _check_apply(self) -> None:
-        pass
+    def _check_auto_apply(self) -> None:
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -191,6 +208,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             "use_regex": self._use_regex.isChecked(),
             "match_beginning": self._match_beginning.isChecked(),
             "rules": rules,
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -205,6 +223,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         self._case_sensitive.setChecked(bool(payload.get("case_sensitive", False)))
         self._use_regex.setChecked(bool(payload.get("use_regex", False)))
         self._match_beginning.setChecked(bool(payload.get("match_beginning", False)))
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         rules = payload.get("rules", [])
         if rules:

@@ -238,9 +238,9 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         bottom_row.addWidget(self._append_cb)
 
         bottom_row.addStretch(1)
-        self._auto_apply_cb = QCheckBox(i18n.t("Apply Automatically"))
-        self._auto_apply_cb.setChecked(True)
-        bottom_row.addWidget(self._auto_apply_cb)
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        bottom_row.addWidget(self.cb_apply_auto)
 
         self._apply_button = QPushButton(i18n.t("Create"))
         self._apply_button.setProperty("primary", True)
@@ -253,7 +253,7 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addWidget(self._result_label)
 
     def _check_auto_apply(self) -> None:
-        if self._auto_apply_cb.isChecked():
+        if self.cb_apply_auto.isChecked():
             self._apply()
 
     # ------------------------------------------------------------------ I/O
@@ -267,6 +267,7 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
             elif getattr(payload, "port_label", None) == "Reference":
                 self._ref_ds = getattr(payload, "dataset", None)
         self._rebuild_fields()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -279,7 +280,7 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "values": values,
             "append": self._append_cb.isChecked(),
-            "auto_apply": self._auto_apply_cb.isChecked(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -289,7 +290,7 @@ class CreateInstanceScreen(QWidget, WorkflowNodeScreenSupport):
                 if name in self._editors:
                     self._editors[name].set_value(val if val != "" else None)
         self._append_cb.setChecked(bool(payload.get("append", True)))
-        self._auto_apply_cb.setChecked(bool(payload.get("auto_apply", True)))
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Create a single instance (row) by setting column values manually or automatically based on logic."

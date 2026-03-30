@@ -185,15 +185,37 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        # Auto-apply hooks
+        self._mode_group.idClicked.connect(self._check_auto_apply)
+        self._pct_slider.valueChanged.connect(self._check_auto_apply)
+        self._fixed_spin.valueChanged.connect(self._check_auto_apply)
+        self._folds_spin.valueChanged.connect(self._check_auto_apply)
+        self._fold_spin.valueChanged.connect(self._check_auto_apply)
+        self._replacement_cb.stateChanged.connect(self._check_auto_apply)
+        self._stratify_cb.stateChanged.connect(self._check_auto_apply)
+        self._use_seed.stateChanged.connect(self._check_auto_apply)
+        self._seed_spin.valueChanged.connect(self._check_auto_apply)
+
+        footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+        footer.addStretch(1)
+
         self._apply_button = QPushButton(i18n.t("Sample Data"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
-        layout.addWidget(self._apply_button)
+        footer.addWidget(self._apply_button)
+        layout.addLayout(footer)
 
         # ── Wire mode-change signal ───────────────────────────────────
         self._mode_group.idToggled.connect(self._on_mode_changed)
         # Set initial enable/disable state
         self._on_mode_changed(0, True)
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     # ── input / output ────────────────────────────────────────────────
 
@@ -231,6 +253,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
             self._input_count_label.setText("")
             self._sample_count_label.setText("")
             self._remaining_count_label.setText("")
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -254,6 +277,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
             "stratify": self._stratify_cb.isChecked(),
             "use_seed": self._use_seed.isChecked(),
             "seed": self._seed_spin.value(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -269,6 +293,7 @@ class DataSamplerScreen(QWidget, WorkflowNodeScreenSupport):
         self._stratify_cb.setChecked(bool(payload.get("stratify", False)))
         self._use_seed.setChecked(bool(payload.get("use_seed", True)))
         self._seed_spin.setValue(int(payload.get("seed", 42)))
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
         self._on_mode_changed(mode_id, True)
 
     def help_text(self) -> str:

@@ -176,7 +176,13 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
+        # Auto-apply hooks
+        self._group_list.itemSelectionChanged.connect(self._check_auto_apply)
+
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -212,6 +218,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
+        self._apply()
 
     def _get_logical_type(self, attr_name: str) -> str:
         if not self._dataset_handle:
@@ -302,6 +309,10 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
                 cb.setCheckState(Qt.CheckState.PartiallyChecked)
             cb.blockSignals(False)
 
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
+
     def _on_agg_checkbox_changed(self, agg_name: str) -> None:
         """When an aggregation checkbox is toggled, update selected attributes."""
         selected_attrs = self._get_selected_attr_names()
@@ -320,6 +331,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
                 self._attr_aggregations[attr].discard(agg_name)
                 
         self._rebuild_attr_table()
+        self._check_auto_apply()
 
     def _get_selected_attr_names(self) -> list[str]:
         selected_rows = set()
@@ -342,7 +354,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
             if self._group_list.item(i).isSelected()
         ]
         aggs = {k: list(v) for k, v in self._attr_aggregations.items()}
-        return {"group_columns": group_cols, "aggregations": aggs}
+        return {"group_columns": group_cols, "aggregations": aggs, "auto_apply": self.cb_apply_auto.isChecked()}
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
         group_cols = payload.get("group_columns", [])
@@ -356,6 +368,7 @@ class GroupByScreen(QWidget, WorkflowNodeScreenSupport):
                 if isinstance(v, list):
                     self._attr_aggregations[k] = set(v)
         self._rebuild_attr_table()
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return i18n.t("Group the dataset by selected columns and compute per-attribute aggregations.")

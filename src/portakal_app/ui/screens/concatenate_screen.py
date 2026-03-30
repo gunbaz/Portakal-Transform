@@ -109,7 +109,18 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        # Auto-apply hooks
+        self._mode_group.idClicked.connect(self._check_auto_apply)
+        self._check_primary_names.stateChanged.connect(self._check_auto_apply)
+        self._check_same_formula.stateChanged.connect(self._check_auto_apply)
+        self._add_source.stateChanged.connect(self._check_auto_apply)
+        self._source_name.textChanged.connect(self._check_auto_apply)
+        self._source_role.currentIndexChanged.connect(self._check_auto_apply)
+
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -126,9 +137,16 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         elif payload.port_label == "Additional Data":
             self._additional = payload.dataset
         self._update_info()
+        # Auto-apply when at least one input is available
+        if self._primary is not None or self._additional is not None:
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def serialize_node_state(self) -> dict[str, object]:
         return {
@@ -137,6 +155,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
             "add_source": self._add_source.isChecked(),
             "source_name": self._source_name.text(),
             "source_role": self._source_role.currentIndex(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -152,6 +171,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         role = str(payload.get("source_role", "Class attribute"))
         if self._source_role.findText(role) >= 0:
             self._source_role.setCurrentText(role)
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Concatenate two or more datasets vertically (append rows)."

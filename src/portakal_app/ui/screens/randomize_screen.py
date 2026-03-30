@@ -99,8 +99,7 @@ class RandomizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_handle = dataset
         self._output_dataset = None
         
-        if self.cb_apply_auto.isChecked():
-            self._apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -64,6 +65,9 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addStretch(1)
 
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -94,10 +98,10 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         }
 
     def serialize_node_state(self) -> dict[str, object]:
-        return {}
+        return {"auto_apply": self.cb_apply_auto.isChecked()}
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
-        pass
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Select rows from the primary dataset based on indices present in a data subset."

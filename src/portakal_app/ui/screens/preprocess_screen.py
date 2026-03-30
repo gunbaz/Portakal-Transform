@@ -474,7 +474,7 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
-        self._check_auto_apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

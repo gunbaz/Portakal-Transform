@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -310,6 +311,17 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         btn_row.addStretch(1)
         layout.addLayout(btn_row)
 
+        # ── Purge checkboxes (Orange compatibility) ───────────────────
+        self._purge_attrs_cb = QCheckBox(
+            i18n.t("Remove unused values and constant features")
+        )
+        layout.addWidget(self._purge_attrs_cb)
+
+        self._purge_classes_cb = QCheckBox(
+            i18n.t("Remove unused classes")
+        )
+        layout.addWidget(self._purge_classes_cb)
+
         # ── Status bar: Selected | Remaining | Total ──────────────────
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -338,12 +350,22 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         # ── Apply button ──────────────────────────────────────────────
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
+
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+
+        # ── Signal connections for auto-apply ─────────────────────
+        self._logic_group.idClicked.connect(lambda: self._check_auto_apply())
+        self._purge_attrs_cb.stateChanged.connect(lambda: self._check_auto_apply())
+        self._purge_classes_cb.stateChanged.connect(lambda: self._check_auto_apply())
 
     # ── Data pipeline ─────────────────────────────────────────────────
 
@@ -365,6 +387,9 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._clear_status()
 
+        if self._dataset_handle is not None:
+            self._apply()
+
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
@@ -379,6 +404,9 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "conditions": conditions,
             "conjunction": "any" if self._radio_or.isChecked() else "all",
+            "purge_attributes": self._purge_attrs_cb.isChecked(),
+            "purge_classes": self._purge_classes_cb.isChecked(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -388,6 +416,11 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
             self._radio_or.setChecked(True)
         else:
             self._radio_and.setChecked(True)
+
+        # Restore purge checkboxes
+        self._purge_attrs_cb.setChecked(bool(payload.get("purge_attributes", False)))
+        self._purge_classes_cb.setChecked(bool(payload.get("purge_classes", False)))
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         # Restore conditions
         saved_conditions = payload.get("conditions", [])
@@ -414,6 +447,10 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
         return "https://orangedatamining.com/widget-catalog/transform/selectrows/"
 
     # ── Internals ─────────────────────────────────────────────────────
+
+    def _check_auto_apply(self) -> None:
+        if self._is_auto_apply() and self._dataset_handle is not None:
+            self._apply()
 
     def _get_columns(self) -> list[tuple[str, str, tuple[str, ...]]]:
         if self._dataset_handle is None:
@@ -475,6 +512,8 @@ class SelectRowsScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_handle,
             conditions=conditions,
             conjunction=conjunction,
+            purge_attributes=self._purge_attrs_cb.isChecked(),
+            purge_classes=self._purge_classes_cb.isChecked(),
         )
 
         self._output_dataset = matching

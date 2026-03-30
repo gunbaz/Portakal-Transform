@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -62,6 +63,9 @@ class ApplyDomainScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addStretch(1)
 
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -78,15 +82,18 @@ class ApplyDomainScreen(QWidget, WorkflowNodeScreenSupport):
         elif payload.port_label == "Template Data":
             self._template_handle = payload.dataset
         self._update_info()
+        # Auto-apply when both inputs are available
+        if self._dataset_handle is not None and self._template_handle is not None:
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
-        return {}
+        return {"auto_apply": self.cb_apply_auto.isChecked()}
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
-        pass
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Apply the domain structure from a template dataset onto the input data."

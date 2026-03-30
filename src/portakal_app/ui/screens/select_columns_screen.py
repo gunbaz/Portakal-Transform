@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -317,6 +318,10 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         self._reset_btn.clicked.connect(self._reset_columns)
         bottom_layout.addWidget(self._reset_btn)
 
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        bottom_layout.addWidget(self.cb_apply_auto)
+
         bottom_layout.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -340,6 +345,8 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         self._dataset_handle = dataset
         self._output_dataset = None
         self._reset_columns()
+        if self._dataset_handle is not None:
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -350,6 +357,7 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             "target": _list_items(self._target_list),
             "metas": _list_items(self._meta_list),
             "ignored": _list_items(self._ignored_list),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -362,6 +370,8 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             self._saved_roles[col_name] = "meta"
         for col_name in payload.get("ignored", []):
             self._saved_roles[col_name] = "ignored"
+
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         if self._dataset_handle:
             self._reset_columns()
@@ -377,9 +387,14 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         return "https://orangedatamining.com/widget-catalog/transform/selectcolumns/"
 
     # ── Internal helpers ────────────────────────────────────────────────
+    def _check_auto_apply(self) -> None:
+        if self._is_auto_apply() and self._dataset_handle is not None:
+            self._apply()
+
     def _on_lists_changed(self) -> None:
         """Called after any drag-drop completes so we can update counts."""
         self._update_group_titles()
+        self._check_auto_apply()
 
     def _update_group_titles(self) -> None:
         self._ignored_group.update_title_count(i18n.t("Ignored"))
@@ -440,6 +455,7 @@ class SelectColumnsScreen(QWidget, WorkflowNodeScreenSupport):
                 target_list.addItem(taken_item)
 
         self._update_group_titles()
+        self._check_auto_apply()
 
     def _apply(self) -> None:
         if self._dataset_handle is None:

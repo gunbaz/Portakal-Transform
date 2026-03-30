@@ -36,13 +36,13 @@ class DataSamplerService:
         # ------------------------------------------------------------------
         if mode == "percentage":
             sample_size = max(1, int(np.ceil(n * percentage / 100)))
-            if stratify:
-                sample_idx, remaining_idx = _stratified_sample(
-                    rgen, dataset, sample_size, with_replacement
-                )
-            elif with_replacement:
+            if with_replacement:
                 sample_idx, remaining_idx = _sample_with_replacement(
                     rgen, n, sample_size
+                )
+            elif stratify:
+                sample_idx, remaining_idx = _stratified_sample(
+                    rgen, dataset, sample_size, False
                 )
             else:
                 sample_idx, remaining_idx = _sample_without_replacement(
@@ -58,13 +58,13 @@ class DataSamplerService:
             else:
                 sample_size = min(fixed_size, n)
 
-            if stratify:
-                sample_idx, remaining_idx = _stratified_sample(
-                    rgen, dataset, sample_size, with_replacement
-                )
-            elif with_replacement:
+            if with_replacement:
                 sample_idx, remaining_idx = _sample_with_replacement(
                     rgen, n, sample_size
+                )
+            elif stratify:
+                sample_idx, remaining_idx = _stratified_sample(
+                    rgen, dataset, sample_size, False
                 )
             else:
                 sample_idx, remaining_idx = _sample_without_replacement(

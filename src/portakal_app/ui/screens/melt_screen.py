@@ -134,7 +134,7 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
 
         self._id_combo.blockSignals(False)
-        self._check_auto_apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

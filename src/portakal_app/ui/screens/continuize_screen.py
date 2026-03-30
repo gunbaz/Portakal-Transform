@@ -333,8 +333,7 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
             self.cat_config._populate_list([])
             self.num_config._populate_list([])
 
-        if self.cb_apply_auto.isChecked():
-            self._apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

@@ -185,12 +185,20 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
+        # Footer
+        footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+        footer.addStretch(1)
+
         # Bottom Send Button
         self._apply_button = QPushButton(i18n.t("Send"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
+        footer.addWidget(self._apply_button)
         # To mimic Orange's full width button, we just add it to layout directly
-        layout.addWidget(self._apply_button)
+        layout.addLayout(footer)
 
         self._update_editor_state()
 
@@ -375,14 +383,16 @@ class FormulaScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
             
         self._col_combo.blockSignals(False)
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
-        return {"formulas": self._formula_data}
+        return {"formulas": self._formula_data, "auto_apply": self.cb_apply_auto.isChecked()}
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
         raw_formulas = payload.get("formulas", [])
         self._formula_data.clear()
         

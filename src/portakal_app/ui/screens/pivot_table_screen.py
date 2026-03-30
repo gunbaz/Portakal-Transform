@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -73,7 +74,16 @@ class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        # Auto-apply hooks
+        self._row_combo.currentIndexChanged.connect(self._check_auto_apply)
+        self._col_combo.currentIndexChanged.connect(self._check_auto_apply)
+        self._val_combo.currentIndexChanged.connect(self._check_auto_apply)
+        self._agg_combo.currentIndexChanged.connect(self._check_auto_apply)
+
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -100,6 +110,11 @@ class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
+        self._apply()
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -110,6 +125,7 @@ class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
             "col": self._col_combo.currentText(),
             "val": self._val_combo.currentText(),
             "agg": self._agg_combo.currentText(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -117,6 +133,7 @@ class PivotTableScreen(QWidget, WorkflowNodeScreenSupport):
             val = str(payload.get(key, ""))
             if val and combo.findText(val) >= 0:
                 combo.setCurrentText(val)
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return i18n.t("Create a pivot (cross-tabulation) table from the dataset.")

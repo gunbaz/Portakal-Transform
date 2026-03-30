@@ -113,6 +113,12 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
+        # Auto-apply hooks
+        self.default_group.idClicked.connect(self._check_auto_apply)
+        self._fixed_edit.textChanged.connect(self._check_auto_apply)
+        self._fixed_edit_cat.textChanged.connect(self._check_auto_apply)
+        self._seed_spin.valueChanged.connect(self._check_auto_apply)
+
         # Footer applies
         footer = QHBoxLayout()
         self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
@@ -125,6 +131,10 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def _restore_defaults(self):
         for row in range(self.table.rowCount()):
@@ -161,8 +171,7 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
             self.table.setRowCount(0)
             self._result_label.setText("")
             
-        if self.cb_apply_auto.isChecked():
-            self._apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

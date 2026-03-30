@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -161,7 +162,13 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
 
         layout.addStretch(1)
 
+        # Auto-apply hooks
+        self._join_group.idClicked.connect(self._check_auto_apply)
+
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("MERGE"))
         self._apply_button.setProperty("primary", True)
@@ -181,9 +188,16 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         elif payload.port_label == "Extra Data":
             self._extra_handle = payload.dataset
         self._update_all_combos()
+        # Auto-apply when both inputs are available
+        if self._dataset_handle is not None and self._extra_handle is not None:
+            self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def serialize_node_state(self) -> dict[str, object]:
         left_cols = [row.left_combo.currentData() for row in self._match_rows if row.left_combo.currentData()]
@@ -193,6 +207,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
             "left_on": json.dumps(left_cols),
             "right_on": json.dumps(right_cols),
             "join_type": self._join_group.checkedId(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -220,6 +235,7 @@ class MergeDataScreen(QWidget, WorkflowNodeScreenSupport):
         btn = self._join_group.button(jt)
         if btn:
             btn.setChecked(True)
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Merge two datasets by matching one or more column pairs (left, inner, or outer join)."

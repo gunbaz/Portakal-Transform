@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -93,7 +94,16 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
 
+        # Auto-apply hooks
+        self._sel_group.idClicked.connect(self._check_auto_apply)
+        self._op_combo.currentIndexChanged.connect(self._check_auto_apply)
+        self._output_name.textChanged.connect(self._check_auto_apply)
+        self._column_list.itemSelectionChanged.connect(self._check_auto_apply)
+
         footer = QHBoxLayout()
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -103,6 +113,11 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _on_selection_mode_changed(self, mode_id: int) -> None:
         self._column_list.setEnabled(mode_id == _SEL_MANUAL)
+        self._check_auto_apply()
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def _get_selected_columns(self) -> list[str]:
         """Return the list of column names based on current selection mode."""
@@ -145,6 +160,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -160,6 +176,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
             "selection_mode": self._sel_group.checkedId(),
             "operation": self._op_combo.currentText(),
             "output_name": self._output_name.text(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -178,6 +195,7 @@ class AggregateColumnsScreen(QWidget, WorkflowNodeScreenSupport):
         if self._op_combo.findText(op) >= 0:
             self._op_combo.setCurrentText(op)
         self._output_name.setText(str(payload.get("output_name", "agg")))
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return i18n.t("Compute a row-wise aggregation (sum, mean, etc.) over selected numeric columns.")

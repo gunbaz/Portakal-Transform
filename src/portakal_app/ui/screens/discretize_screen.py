@@ -292,8 +292,7 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
             self._result_label.setText("")
             self.configurator._populate_list([], has_target=False)
 
-        if self.cb_apply_auto.isChecked():
-            self._apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

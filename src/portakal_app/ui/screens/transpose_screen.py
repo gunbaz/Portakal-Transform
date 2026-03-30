@@ -120,6 +120,11 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addStretch(1)
 
         footer = QHBoxLayout()
+
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
@@ -130,6 +135,12 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
         self._radio_generic.toggled.connect(self._update_ui_state)
         self._radio_from_col.toggled.connect(self._update_ui_state)
         self._update_ui_state()
+
+        # ── Signal connections for auto-apply ─────────────────────
+        self._name_mode_group.idClicked.connect(lambda: self._check_auto_apply())
+        self._prefix_edit.textChanged.connect(lambda: self._check_auto_apply())
+        self._column_combo.currentIndexChanged.connect(lambda: self._check_auto_apply())
+        self._remove_redundant_check.stateChanged.connect(lambda: self._check_auto_apply())
 
     def _update_ui_state(self) -> None:
         is_generic = self._radio_generic.isChecked()
@@ -152,6 +163,9 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
+        if self._dataset_handle is not None:
+            self._apply()
+
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
@@ -161,6 +175,7 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
             "prefix": self._prefix_edit.text(),
             "from_column": self._column_combo.currentText(),
             "remove_redundant": self._remove_redundant_check.isChecked(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -175,6 +190,7 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
         self._remove_redundant_check.setChecked(
             bool(payload.get("remove_redundant", False))
         )
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
         self._update_ui_state()
 
     def help_text(self) -> str:
@@ -182,6 +198,10 @@ class TransposeScreen(QWidget, WorkflowNodeScreenSupport):
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/transpose/"
+
+    def _check_auto_apply(self) -> None:
+        if self._is_auto_apply() and self._dataset_handle is not None:
+            self._apply()
 
     def _apply(self) -> None:
         if self._dataset_handle is None:

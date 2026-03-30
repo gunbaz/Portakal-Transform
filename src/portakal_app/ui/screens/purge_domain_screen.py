@@ -146,7 +146,7 @@ class PurgeDomainScreen(QWidget, WorkflowNodeScreenSupport):
             self._classes_stats.setText(i18n.t("Sorted: -, reduced: -, removed: -"))
             self._metas_stats.setText(i18n.t("Reduced: -, removed: -"))
 
-        self._check_auto_apply()
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

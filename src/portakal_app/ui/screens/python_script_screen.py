@@ -244,6 +244,10 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         self._result_label.setWordWrap(True)
         bottom_bar.addWidget(self._result_label, 1)
 
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        bottom_bar.addWidget(self.cb_apply_auto)
+
         self._run_button = QPushButton(i18n.t("Run"))
         self._run_button.setProperty("primary", True)
         self._run_button.clicked.connect(self._apply)
@@ -280,6 +284,7 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._info_label.setText("")
             self._result_label.setText("")
+        self._apply()
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -288,9 +293,11 @@ class PythonScriptScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "code": self._code_edit.toPlainText(),
             "library": self._library,
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
         code = payload.get("code", "")
         if code:
             self._code_edit.setPlainText(str(code))

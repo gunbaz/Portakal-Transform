@@ -18,6 +18,22 @@ class WorkflowNodeScreenSupport:
         for callback in callbacks:
             callback()
 
+    # ── Auto-apply support (Orange auto_commit equivalent) ────────────
+
+    def _is_auto_apply(self) -> bool:
+        """Return True if auto-apply checkbox is checked."""
+        cb = getattr(self, "cb_apply_auto", None)
+        return cb is not None and cb.isChecked()
+
+    def _schedule_auto_apply(self) -> None:
+        """Call _apply() if auto-apply is enabled (deferred equivalent)."""
+        if self._is_auto_apply():
+            self._apply()  # type: ignore[attr-defined]
+
+    def _auto_apply_on_input(self) -> None:
+        """Call _apply() unconditionally when new input arrives (now equivalent)."""
+        self._apply()  # type: ignore[attr-defined]
+
     def set_input_payload(self, payload: WorkflowPayload | None) -> None:
         _ = payload
 

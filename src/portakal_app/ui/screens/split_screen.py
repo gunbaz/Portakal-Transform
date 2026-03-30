@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -121,12 +122,22 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
         layout.addStretch(1)
 
         footer = QHBoxLayout()
+
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+
+        # ── Signal connections for auto-apply ─────────────────────
+        self._column_combo.currentIndexChanged.connect(lambda: self._check_auto_apply())
+        self._delimiter_edit.textChanged.connect(lambda: self._check_auto_apply())
+        self._type_group.idClicked.connect(lambda: self._check_auto_apply())
 
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
@@ -143,6 +154,9 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._result_label.setText("")
 
+        if self._dataset_handle is not None:
+            self._apply()
+
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
@@ -151,6 +165,7 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             "column": self._column_combo.currentText(),
             "delimiter": self._delimiter_edit.text(),
             "output_type": self._get_selected_type(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
         
     def _get_selected_type(self) -> str:
@@ -175,12 +190,17 @@ class SplitScreen(QWidget, WorkflowNodeScreenSupport):
             self._radio_counts.setChecked(True)
         else:
             self._radio_num.setChecked(True)
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Split a string column by a delimiter and create indicator columns for each unique value."
 
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/split/"
+
+    def _check_auto_apply(self) -> None:
+        if self._is_auto_apply() and self._dataset_handle is not None:
+            self._apply()
 
     def _apply(self) -> None:
         if self._dataset_handle is None or not self._column_combo.currentText():

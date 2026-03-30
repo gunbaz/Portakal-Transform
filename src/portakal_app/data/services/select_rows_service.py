@@ -43,12 +43,16 @@ class SelectRowsService:
         *,
         conditions: list[tuple[str, str, str]],
         conjunction: str = "all",
+        purge_attributes: bool = False,
+        purge_classes: bool = False,
     ) -> tuple[DatasetHandle | None, DatasetHandle | None]:
         """Filter rows by conditions.
 
         Parameters
         ----------
         conjunction : "all" (AND) or "any" (OR)
+        purge_attributes : remove unused values and constant feature columns
+        purge_classes : remove unused values and constant class/target columns
         """
         df = dataset.dataframe
 
@@ -74,6 +78,15 @@ class SelectRowsService:
 
         matching_df = df.filter(combined)
         non_matching_df = df.filter(~combined)
+
+        # ── Purge unused values / constant columns (Orange compatibility) ──
+        if purge_attributes or purge_classes:
+            matching_df = _purge_domain(
+                matching_df, dataset.domain, purge_attributes, purge_classes
+            )
+            non_matching_df = _purge_domain(
+                non_matching_df, dataset.domain, purge_attributes, purge_classes
+            )
 
         matching = None
         if matching_df.height > 0:
@@ -176,3 +189,55 @@ def _apply_range_op(
         return (float_series >= lo) & (float_series <= hi)
     else:  # is outside
         return (float_series < lo) | (float_series > hi)
+
+
+# ── Purge helpers (matches Orange's Remove preprocessor) ─────────────────
+
+
+def _purge_domain(
+    df: pl.DataFrame,
+    domain,
+    purge_attributes: bool,
+    purge_classes: bool,
+) -> pl.DataFrame:
+    """Remove unused categorical values and constant columns.
+
+    Mirrors Orange's ``Remove(RemoveConstant | RemoveUnusedValues, ...)``.
+    - purge_attributes → applies to feature and meta columns
+    - purge_classes    → applies to target columns
+    """
+    if domain is None or df.height == 0:
+        return df
+
+    cols_to_drop: list[str] = []
+
+    for col_schema in domain.columns:
+        name = col_schema.name
+        if name not in df.columns:
+            continue
+
+        role = col_schema.role
+        # Decide whether this column is subject to purge
+        if role == "target":
+            if not purge_classes:
+                continue
+        else:  # feature or meta
+            if not purge_attributes:
+                continue
+
+        series = df.get_column(name)
+
+        # Remove constant columns (only 1 unique non-null value or all null)
+        n_unique = series.drop_nulls().n_unique()
+        if n_unique <= 1:
+            cols_to_drop.append(name)
+            continue
+
+        # Remove unused categorical values: Polars automatically handles this
+        # since Polars categoricals are value-based (no fixed category set).
+        # The domain will be rebuilt from actual data via build_data_domain().
+
+    if cols_to_drop:
+        df = df.drop(cols_to_drop)
+
+    return df

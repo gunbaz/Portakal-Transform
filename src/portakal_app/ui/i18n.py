@@ -408,6 +408,8 @@ class I18nManager(QObject):
                 "Matching:": "Eşleşen:",
                 "Unmatched:": "Eşleşmeyen:",
                 "Unmatched Data": "Eşleşmeyen Veri",
+                "Remove unused values and constant features": "Kullanılmayan değerleri ve sabit özellikleri kaldır",
+                "Remove unused classes": "Kullanılmayan sınıfları kaldır",
 
                 # ── Transpose ──
                 "Feature names": "Özellik adları",

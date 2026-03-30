@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -105,12 +106,21 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         # ── Apply button ──────────────────────────────────────────────
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
+
+        self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
+        self.cb_apply_auto.setChecked(True)
+        footer.addWidget(self.cb_apply_auto)
+
         footer.addStretch(1)
         self._apply_button = QPushButton(i18n.t("Apply"))
         self._apply_button.setProperty("primary", True)
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+
+        # ── Signal connections for auto-apply ─────────────────────
+        self._column_list.itemSelectionChanged.connect(lambda: self._check_auto_apply())
+        self._tiebreaker_combo.currentIndexChanged.connect(lambda: self._check_auto_apply())
 
     # ── Data pipeline ─────────────────────────────────────────────────
 
@@ -149,6 +159,9 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
             self._dataset_label.setText(i18n.t("Dataset: none"))
             self._status_label.setText("")
 
+        if self._dataset_handle is not None:
+            self._apply()
+
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
 
@@ -157,6 +170,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "group_by": selected,
             "tiebreaker": self._tiebreaker_combo.currentText(),
+            "auto_apply": self.cb_apply_auto.isChecked(),
         }
 
     def restore_node_state(self, payload: dict[str, object]) -> None:
@@ -170,6 +184,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         tiebreaker = payload.get("tiebreaker", "First instance")
         if isinstance(tiebreaker, str):
             self._tiebreaker_combo.setCurrentText(tiebreaker)
+        self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
     def help_text(self) -> str:
         return "Filter the dataset to keep only unique rows based on selected columns."
@@ -177,7 +192,11 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
     def documentation_url(self) -> str:
         return "https://orangedatamining.com/widget-catalog/transform/unique/"
 
-    # ── Internal helpers ──────────────────────────────────────────────
+    # ── Internal helpers ──────────────────────────────────────────
+
+    def _check_auto_apply(self) -> None:
+        if self._is_auto_apply() and self._dataset_handle is not None:
+            self._apply()
 
     def _get_selected_col_names(self) -> list[str]:
         result = []
