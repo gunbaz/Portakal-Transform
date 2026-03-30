@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import random
 from dataclasses import replace
+
+import numpy as np
 
 from portakal_app.data.models import DatasetHandle, build_data_domain
 
@@ -9,11 +10,8 @@ from portakal_app.data.models import DatasetHandle, build_data_domain
 class DataSamplerService:
     """Data sampling service aligned with Orange Data Mining standards.
 
-    Key behaviours that match Orange:
-    * Shuffle before every sampling mode so row-order bias is eliminated.
-    * Bootstrap remaining = true Out-of-Bag (indices never drawn).
-    * Cross-validation: Data Sample = Train, Remaining Data = Test.
-    * Output column order: Target → Meta → Features.
+    Uses numpy.random.RandomState (same as Orange) so identical seeds
+    produce identical splits.
     """
 
     def sample(
@@ -31,92 +29,100 @@ class DataSamplerService:
     ) -> tuple[DatasetHandle, DatasetHandle | None]:
         df = dataset.dataframe
         n = df.height
-        rng = random.Random(seed)
+        rgen = np.random.RandomState(seed)
 
         # ------------------------------------------------------------------
         # Fixed Proportion
         # ------------------------------------------------------------------
         if mode == "percentage":
-            sample_size = max(1, int(n * percentage / 100))
+            sample_size = max(1, int(np.ceil(n * percentage / 100)))
             if stratify:
-                sample_idx = _stratified_sample(rng, dataset, sample_size, with_replacement)
+                sample_idx, remaining_idx = _stratified_sample(
+                    rgen, dataset, sample_size, with_replacement
+                )
+            elif with_replacement:
+                sample_idx, remaining_idx = _sample_with_replacement(
+                    rgen, n, sample_size
+                )
             else:
-                sample_idx = _sample_indices(rng, n, sample_size, with_replacement)
-            remaining_idx = sorted(set(range(n)) - set(sample_idx))
-            if not with_replacement:
-                sample_idx = sorted(set(sample_idx))
+                sample_idx, remaining_idx = _sample_without_replacement(
+                    rgen, n, sample_size
+                )
 
         # ------------------------------------------------------------------
         # Fixed Size
         # ------------------------------------------------------------------
         elif mode == "fixed":
-            if not with_replacement:
-                sample_size = min(fixed_size, n)
-            else:
+            if with_replacement:
                 sample_size = fixed_size
-            if stratify:
-                sample_idx = _stratified_sample(rng, dataset, sample_size, with_replacement)
             else:
-                sample_idx = _sample_indices(rng, n, sample_size, with_replacement)
-            remaining_idx = sorted(set(range(n)) - set(sample_idx))
-            if not with_replacement:
-                sample_idx = sorted(set(sample_idx))
+                sample_size = min(fixed_size, n)
+
+            if stratify:
+                sample_idx, remaining_idx = _stratified_sample(
+                    rgen, dataset, sample_size, with_replacement
+                )
+            elif with_replacement:
+                sample_idx, remaining_idx = _sample_with_replacement(
+                    rgen, n, sample_size
+                )
+            else:
+                sample_idx, remaining_idx = _sample_without_replacement(
+                    rgen, n, sample_size
+                )
 
         # ------------------------------------------------------------------
-        # Cross Validation  (Orange standard port mapping)
-        #   Data Sample  → Train  (all folds except the held-out one)
-        #   Remaining    → Test   (the held-out fold)
+        # Cross Validation  (Data Sample = Train, Remaining = Test)
         # ------------------------------------------------------------------
         elif mode == "cross-validation":
-            # Shuffle before splitting – matches Orange's KFold(shuffle=True)
-            shuffled = list(range(n))
-            rng.shuffle(shuffled)
+            shuffled = np.arange(n)
+            rgen.shuffle(shuffled)
 
             fold_size = n // folds
-            fold_buckets: list[list[int]] = []
+            fold_buckets: list[np.ndarray] = []
             for f in range(folds):
                 start = f * fold_size
                 end = (start + fold_size) if f < folds - 1 else n
                 fold_buckets.append(shuffled[start:end])
 
-            test_idx = sorted(fold_buckets[selected_fold - 1])
-            train_idx = sorted(
-                idx
-                for f, bucket in enumerate(fold_buckets)
-                if f != selected_fold - 1
-                for idx in bucket
+            test_idx = np.sort(fold_buckets[selected_fold - 1])
+            train_idx = np.sort(
+                np.concatenate(
+                    [b for i, b in enumerate(fold_buckets) if i != selected_fold - 1]
+                )
             )
 
-            train_df = _reorder_columns(df[train_idx], dataset.domain)
-            test_df = _reorder_columns(df[test_idx], dataset.domain)
+            train_df = _reorder_columns(df[train_idx.tolist()], dataset.domain)
+            test_df = _reorder_columns(df[test_idx.tolist()], dataset.domain)
             return _build_pair(dataset, train_df, test_df)
 
         # ------------------------------------------------------------------
-        # Bootstrap  (Out-of-Bag = indices never drawn)
+        # Bootstrap  (identical to Orange's SampleBootstrap)
         # ------------------------------------------------------------------
         elif mode == "bootstrap":
-            # Draw N indices with replacement (sample size fixed to N)
-            bootstrap_idx = [rng.randint(0, n - 1) for _ in range(n)]
-            bootstrap_idx.sort()
+            sample = rgen.randint(0, n, n)
+            sample.sort()
 
-            # True OOB via boolean mask (matches Orange's SampleBootstrap)
-            selected = [False] * n
-            for i in bootstrap_idx:
-                selected[i] = True
-            oob_idx = [i for i in range(n) if not selected[i]]
+            insample = np.ones(n, dtype=bool)
+            insample[sample] = False
+            oob_idx = np.flatnonzero(insample)
 
-            sample_df = _reorder_columns(df[bootstrap_idx], dataset.domain)
-            oob_df = _reorder_columns(df[oob_idx], dataset.domain) if oob_idx else None
+            sample_df = _reorder_columns(df[sample.tolist()], dataset.domain)
+            oob_df = (
+                _reorder_columns(df[oob_idx.tolist()], dataset.domain)
+                if len(oob_idx) > 0
+                else None
+            )
             return _build_pair(dataset, sample_df, oob_df)
 
         else:
-            sample_idx = list(range(n))
-            remaining_idx = []
+            sample_idx = np.arange(n)
+            remaining_idx = np.array([], dtype=int)
 
-        sample_df = _reorder_columns(df[sample_idx], dataset.domain)
+        sample_df = _reorder_columns(df[sample_idx.tolist()], dataset.domain)
         remaining_df = (
-            _reorder_columns(df[remaining_idx], dataset.domain)
-            if remaining_idx
+            _reorder_columns(df[remaining_idx.tolist()], dataset.domain)
+            if len(remaining_idx) > 0
             else None
         )
         return _build_pair(dataset, sample_df, remaining_df)
@@ -125,8 +131,72 @@ class DataSamplerService:
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _reorder_columns(df, domain) -> object:
-    """Reorder columns: Target → Meta → Features (global hierarchy)."""
+def _sample_with_replacement(
+    rgen: np.random.RandomState, n: int, size: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Orange's SampleRandomN with replace=True."""
+    sample = rgen.randint(0, n, size)
+    o = np.ones(n)
+    o[sample] = 0
+    others = np.nonzero(o)[0]
+    return sample, others
+
+
+def _sample_without_replacement(
+    rgen: np.random.RandomState, n: int, size: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Orange's SampleRandomN with replace=False (via ShuffleSplit logic)."""
+    indices = np.arange(n)
+    rgen.shuffle(indices)
+    sample = np.sort(indices[:size])
+    remaining = np.sort(indices[size:])
+    return sample, remaining
+
+
+def _stratified_sample(
+    rgen: np.random.RandomState,
+    dataset: DatasetHandle,
+    sample_size: int,
+    with_replacement: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    target_cols = dataset.domain.target_columns if dataset.domain else ()
+    if not target_cols:
+        if with_replacement:
+            return _sample_with_replacement(rgen, dataset.dataframe.height, sample_size)
+        return _sample_without_replacement(rgen, dataset.dataframe.height, sample_size)
+
+    target_name = target_cols[0].name
+    series = dataset.dataframe.get_column(target_name)
+    groups: dict[str, list[int]] = {}
+    for i, val in enumerate(series.to_list()):
+        groups.setdefault(str(val), []).append(i)
+
+    n = dataset.dataframe.height
+    sample_indices: list[int] = []
+    for group_indices in groups.values():
+        group_n = len(group_indices)
+        group_size = max(1, round(group_n / n * sample_size))
+        arr = np.array(group_indices)
+        if with_replacement:
+            chosen = rgen.choice(arr, size=group_size, replace=True)
+        else:
+            chosen = rgen.choice(arr, size=min(group_size, group_n), replace=False)
+        sample_indices.extend(chosen.tolist())
+
+    sample = np.array(sample_indices)
+    if with_replacement:
+        o = np.ones(n)
+        o[sample] = 0
+        remaining = np.nonzero(o)[0]
+    else:
+        sample = np.sort(np.unique(sample))
+        remaining = np.setdiff1d(np.arange(n), sample)
+
+    return sample, remaining
+
+
+def _reorder_columns(df, domain):
+    """Reorder columns: Target → Meta → Features."""
     if domain is None:
         return df
     target_names = [c.name for c in domain.target_columns if c.name in df.columns]
@@ -139,44 +209,6 @@ def _reorder_columns(df, domain) -> object:
     if final_order == list(df.columns):
         return df
     return df.select(final_order)
-
-
-def _sample_indices(
-    rng: random.Random, n: int, size: int, with_replacement: bool
-) -> list[int]:
-    if with_replacement:
-        return [rng.randint(0, n - 1) for _ in range(size)]
-    return rng.sample(range(n), min(size, n))
-
-
-def _stratified_sample(
-    rng: random.Random,
-    dataset: DatasetHandle,
-    sample_size: int,
-    with_replacement: bool,
-) -> list[int]:
-    target_cols = dataset.domain.target_columns if dataset.domain else ()
-    if not target_cols:
-        return _sample_indices(rng, dataset.dataframe.height, sample_size, with_replacement)
-
-    target_name = target_cols[0].name
-    series = dataset.dataframe.get_column(target_name)
-    groups: dict[str, list[int]] = {}
-    for i, val in enumerate(series.to_list()):
-        key = str(val)
-        groups.setdefault(key, []).append(i)
-
-    n = dataset.dataframe.height
-    indices: list[int] = []
-    for group_indices in groups.values():
-        group_size = max(1, round(len(group_indices) / n * sample_size))
-        if with_replacement:
-            indices.extend(rng.choices(group_indices, k=group_size))
-        else:
-            indices.extend(
-                rng.sample(group_indices, min(group_size, len(group_indices)))
-            )
-    return indices
 
 
 def _build_pair(
