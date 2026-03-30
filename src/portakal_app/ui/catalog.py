@@ -327,8 +327,9 @@ def build_widgets() -> list[WidgetDefinition]:
             ConcatenateScreen,
             i18n.t("Append datasets vertically."),
             "concatenate",
-            _inputs("Primary Data", "Additional Data"),
+            _inputs("Data"),
             _outputs("Data"),
+            input_channels=("Primary Data", "Additional Data"),
         ),
         WidgetDefinition(
             "aggregate-columns",

@@ -26,7 +26,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         self._init_workflow_node_support()
         self._service = ConcatenateService()
         self._primary: DatasetHandle | None = None
-        self._additional: DatasetHandle | None = None
+        self._additional: list[DatasetHandle] = []
         self._output_dataset: DatasetHandle | None = None
 
         layout = QVBoxLayout(self)
@@ -111,7 +111,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
         # Auto-apply hooks
         self._mode_group.idClicked.connect(self._check_auto_apply)
-        self._check_primary_names.stateChanged.connect(self._check_auto_apply)
+        self._check_primary_names.stateChanged.connect(self._on_primary_names_changed)
         self._check_same_formula.stateChanged.connect(self._check_auto_apply)
         self._add_source.stateChanged.connect(self._check_auto_apply)
         self._source_name.textChanged.connect(self._check_auto_apply)
@@ -131,15 +131,41 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
     def set_input_payload(self, payload) -> None:
         if payload is None:
             self._primary = None
-            self._additional = None
+            self._additional = []
         elif payload.port_label == "Primary Data":
             self._primary = payload.dataset
         elif payload.port_label == "Additional Data":
-            self._additional = payload.dataset
+            if payload.dataset is not None:
+                self._additional.append(payload.dataset)
+        else:
+            # Fallback: single-port connection → treat as additional
+            if payload.dataset is not None:
+                self._additional.append(payload.dataset)
+        self._update_ui_locks()
         self._update_info()
         # Auto-apply when at least one input is available
-        if self._primary is not None or self._additional is not None:
+        if self._primary is not None or self._additional:
             self._apply()
+
+    def _update_ui_locks(self) -> None:
+        """Disable/enable controls based on connection state (like Orange3)."""
+        has_primary = self._primary is not None
+        # When primary is connected, the domain is taken from primary →
+        # the merge-mode choice (union/intersection) is irrelevant.
+        self._radio_union.setEnabled(not has_primary)
+        self._radio_intersection.setEnabled(not has_primary)
+
+        # "Use column names from the primary table" only makes sense
+        # when a primary table is actually connected.
+        self._check_primary_names.setEnabled(has_primary)
+        if not has_primary:
+            self._check_primary_names.setChecked(False)
+
+        # "Treat variables with the same name..." is disabled when
+        # "ignore names" is active (same as Orange3).
+        self._check_same_formula.setEnabled(
+            not (has_primary and self._check_primary_names.isChecked())
+        )
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
@@ -147,6 +173,13 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
     def _check_auto_apply(self):
         if self.cb_apply_auto.isChecked():
             self._apply()
+
+    def _on_primary_names_changed(self):
+        # When "use primary names" is toggled, lock/unlock the formula checkbox
+        self._check_same_formula.setEnabled(
+            not (self._primary is not None and self._check_primary_names.isChecked())
+        )
+        self._check_auto_apply()
 
     def serialize_node_state(self) -> dict[str, object]:
         return {
@@ -181,11 +214,22 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
 
     def _update_info(self) -> None:
         p = f"{self._primary.row_count}r" if self._primary else "-"
-        a = f"{self._additional.row_count}r" if self._additional else "-"
+        a_count = len(self._additional)
+        if a_count == 0:
+            a = "-"
+        elif a_count == 1:
+            a = f"{self._additional[0].row_count}r"
+        else:
+            total = sum(ds.row_count for ds in self._additional)
+            a = f"{a_count} tables ({total}r)"
         self._info_label.setText(i18n.tf("Primary: {p}  |  Additional: {a}", p=p, a=a))
 
     def _apply(self) -> None:
-        datasets = [ds for ds in [self._primary, self._additional] if ds is not None]
+        datasets = []
+        if self._primary is not None:
+            datasets.append(self._primary)
+        datasets.extend(self._additional)
+
         if not datasets:
             self._output_dataset = None
             self._result_label.setText("")
@@ -215,9 +259,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         self._notify_output_changed()
 
     def refresh_translations(self) -> None:
-        p = f"{self._primary.row_count}r" if self._primary else "-"
-        a = f"{self._additional.row_count}r" if self._additional else "-"
-        self._info_label.setText(i18n.tf("Primary: {p}  |  Additional: {a}", p=p, a=a))
+        self._update_info()
         if self._output_dataset is not None:
             self._result_label.setText(
                 i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
