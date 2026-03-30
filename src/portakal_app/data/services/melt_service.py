@@ -24,10 +24,24 @@ class MeltService:
         if id_column and id_column in df.columns:
             id_vars = [id_column]
 
-        value_vars = [c for c in df.columns if c not in id_vars]
+        # Orange3 only melts domain.attributes (features).
+        # Target and meta columns are never included in value_vars.
+        feature_names = {c.name for c in dataset.domain.feature_columns}
+        value_vars = [
+            c for c in df.columns
+            if c in feature_names and c not in id_vars
+        ]
 
         if ignore_non_numeric:
-            value_vars = [c for c in value_vars if df.get_column(c).dtype.is_numeric()]
+            # Use domain logical_type, not polars dtype, to match Orange3's
+            # var.is_continuous check.  Categorical columns that happen to be
+            # stored as integers (e.g. {0,1}) must be excluded.
+            numeric_logical = {
+                col.name
+                for col in dataset.domain.feature_columns
+                if col.logical_type in ("numeric", "boolean")
+            }
+            value_vars = [c for c in value_vars if c in numeric_logical]
 
         if not value_vars:
             return dataset
