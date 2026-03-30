@@ -81,7 +81,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         src_row = QHBoxLayout()
         src_row.addWidget(QLabel(i18n.t("From column:")))
         self._source_combo = QComboBox()
-        self._source_combo.currentIndexChanged.connect(self._check_apply)
+        self._source_combo.currentIndexChanged.connect(self._check_auto_apply)
         src_row.addWidget(self._source_combo, 1)
         match_layout.addLayout(src_row)
         
@@ -129,15 +129,15 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
         opts_layout.setContentsMargins(10, 10, 10, 10)
 
         self._use_regex = QCheckBox(i18n.t("Use regular expressions"))
-        self._use_regex.stateChanged.connect(self._check_apply)
+        self._use_regex.stateChanged.connect(self._check_auto_apply)
         opts_layout.addWidget(self._use_regex)
 
         self._match_beginning = QCheckBox(i18n.t("Match only at the beginning"))
-        self._match_beginning.stateChanged.connect(self._check_apply)
+        self._match_beginning.stateChanged.connect(self._check_auto_apply)
         opts_layout.addWidget(self._match_beginning)
 
         self._case_sensitive = QCheckBox(i18n.t("Case sensitive"))
-        self._case_sensitive.stateChanged.connect(self._check_apply)
+        self._case_sensitive.stateChanged.connect(self._check_auto_apply)
         opts_layout.addWidget(self._case_sensitive)
         
         layout.addWidget(opts_group)
@@ -261,7 +261,7 @@ class CreateClassScreen(QWidget, WorkflowNodeScreenSupport):
             self._rule_rows.remove(row)
             self._rules_layout.removeWidget(row)
             row.deleteLater()
-            self._check_apply()
+            self._check_auto_apply()
 
     def _apply(self) -> None:
         if self._dataset_handle is None or self._source_combo.count() == 0:
