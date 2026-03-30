@@ -222,7 +222,7 @@ def _build_pair(
         display_name=f"{dataset.display_name} (sample)",
         dataframe=sample_df,
         row_count=sample_df.height,
-        domain=build_data_domain(sample_df),
+        domain=build_data_domain(sample_df, source_domain=dataset.domain),
     )
     remaining_ds = None
     if remaining_df is not None and remaining_df.height > 0:
@@ -232,6 +232,6 @@ def _build_pair(
             display_name=f"{dataset.display_name} (remaining)",
             dataframe=remaining_df,
             row_count=remaining_df.height,
-            domain=build_data_domain(remaining_df),
+            domain=build_data_domain(remaining_df, source_domain=dataset.domain),
         )
     return sample_ds, remaining_ds

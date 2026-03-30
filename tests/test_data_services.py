@@ -396,7 +396,7 @@ def test_feature_ranking_service_supports_top_n_filter_and_heuristic(tmp_path):
     source_path = tmp_path / "rank.csv"
     pl.DataFrame(
         {
-            "signal": [0, 0, 1, 1],
+            "signal": [0.1, 0.2, 0.9, 0.8],
             "noise": [5, 1, 3, 4],
             "city": ["A", "A", "B", "B"],
             "target": ["A", "A", "B", "B"],

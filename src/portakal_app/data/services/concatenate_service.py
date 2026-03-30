@@ -65,7 +65,7 @@ class ConcatenateService:
 
         result = pl.concat(dfs, how="vertical_relaxed")
         base = datasets[0]
-        domain = build_data_domain(result)
+        domain = build_data_domain(result, source_domain=base.domain)
 
         if add_source_column and source_column_role != "feature":
             new_domain_cols = []

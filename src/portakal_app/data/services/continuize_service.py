@@ -75,7 +75,7 @@ class ContinuizeService:
                 dataframe=pl.DataFrame(),
                 row_count=0,
                 column_count=0,
-                domain=build_data_domain(pl.DataFrame()),
+                domain=build_data_domain(pl.DataFrame(), source_domain=dataset.domain),
             )
 
         result_df = pl.DataFrame(result_series)
@@ -87,7 +87,7 @@ class ContinuizeService:
             dataframe=result_df,
             row_count=result_df.height,
             column_count=result_df.width,
-            domain=build_data_domain(result_df),
+            domain=build_data_domain(result_df, source_domain=dataset.domain),
         )
 
 

@@ -191,7 +191,7 @@ class PythonScriptService:
                     dataframe=out_df,
                     row_count=out_df.height,
                     column_count=out_df.width,
-                    domain=build_data_domain(out_df),
+                    domain=build_data_domain(out_df, source_domain=dataset.domain),
                 )
             else:
                 dummy_path = (

@@ -48,5 +48,5 @@ class RandomizeService:
             dataset_id=f"{dataset.dataset_id}-randomized",
             display_name=f"{dataset.display_name} (randomized)",
             dataframe=new_df,
-            domain=build_data_domain(new_df),
+            domain=build_data_domain(new_df, source_domain=dataset.domain),
         )

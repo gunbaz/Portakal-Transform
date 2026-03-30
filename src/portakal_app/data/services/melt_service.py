@@ -52,5 +52,5 @@ class MeltService:
             dataframe=melted,
             row_count=melted.height,
             column_count=melted.width,
-            domain=build_data_domain(melted),
+            domain=build_data_domain(melted, source_domain=dataset.domain),
         )

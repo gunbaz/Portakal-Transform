@@ -75,5 +75,5 @@ class TransposeService:
             dataframe=transposed,
             row_count=transposed.height,
             column_count=transposed.width,
-            domain=build_data_domain(transposed),
+            domain=build_data_domain(transposed, source_domain=dataset.domain),
         )

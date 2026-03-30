@@ -103,6 +103,6 @@ class ImputeService:
             dataframe=result,
             row_count=result.height,
             column_count=result.width,
-            domain=build_data_domain(result),
+            domain=build_data_domain(result, source_domain=dataset.domain),
         )
 

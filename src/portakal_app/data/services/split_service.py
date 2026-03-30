@@ -69,5 +69,5 @@ class SplitService:
             dataframe=result_df,
             row_count=result_df.height,
             column_count=result_df.width,
-            domain=build_data_domain(result_df),
+            domain=build_data_domain(result_df, source_domain=dataset.domain),
         )

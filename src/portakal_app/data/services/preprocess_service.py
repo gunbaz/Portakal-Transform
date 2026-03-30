@@ -110,7 +110,7 @@ class PreprocessService:
             dataframe=df,
             row_count=df.height,
             column_count=df.width,
-            domain=build_data_domain(df),
+            domain=build_data_domain(df, source_domain=dataset.domain),
         )
 
 def _continuize(df: pl.DataFrame, method: str) -> pl.DataFrame:

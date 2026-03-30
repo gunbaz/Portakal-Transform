@@ -52,7 +52,7 @@ class CreateClassService:
 
         result_df = df.with_columns(pl.Series(class_name, class_values, dtype=pl.Utf8))
 
-        domain = build_data_domain(result_df)
+        domain = build_data_domain(result_df, source_domain=dataset.domain)
         new_columns = list(domain.columns)
         for idx, col in enumerate(new_columns):
             if col.name == class_name:

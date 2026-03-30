@@ -77,7 +77,7 @@ class UniqueService:
             display_name=f"{dataset.display_name} (unique)",
             dataframe=result,
             row_count=result.height,
-            domain=build_data_domain(result),
+            domain=build_data_domain(result, source_domain=dataset.domain),
         )
 
 

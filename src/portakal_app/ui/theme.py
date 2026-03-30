@@ -244,6 +244,17 @@ QComboBox {
     border: 1px solid #d1cabf;
     border-radius: 8px;
     padding: 6px 10px;
+    color: #2b2b2b;
+}
+QComboBox QAbstractItemView {
+    background: white;
+    color: #2b2b2b;
+    border: 1px solid #d1cabf;
+    selection-background-color: #e8e1d1;
+    selection-color: #2b2b2b;
+}
+QComboBox::drop-down {
+    border: none;
 }
 QCheckBox {
     spacing: 8px;

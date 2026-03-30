@@ -674,7 +674,7 @@ def test_column_statistics_screen_filters_columns_and_shows_warning_badges(app, 
 def test_rank_screen_orders_signal_feature_first(app, tmp_path):
     screen = RankScreen()
     csv_path = tmp_path / "rank.csv"
-    csv_path.write_text("signal,noise,target\n0,5,A\n0,1,A\n1,3,B\n1,4,B\n", encoding="utf-8")
+    csv_path.write_text("signal,noise,target\n0.1,5,A\n0.2,1,A\n0.9,3,B\n0.8,4,B\n", encoding="utf-8")
     screen.set_dataset(str(csv_path))
 
     assert screen._rank_table.rowCount() >= 2
@@ -687,7 +687,7 @@ def test_rank_screen_orders_signal_feature_first(app, tmp_path):
 def test_rank_screen_supports_target_override_filter_and_top_n(app, tmp_path):
     screen = RankScreen()
     csv_path = tmp_path / "rank-controls.csv"
-    csv_path.write_text("signal,noise,city,target\n0,5,A,A\n0,1,A,A\n1,3,B,B\n1,4,B,B\n", encoding="utf-8")
+    csv_path.write_text("signal,noise,city,target\n0.1,5,A,A\n0.2,1,A,A\n0.9,3,B,B\n0.8,4,B,B\n", encoding="utf-8")
     screen.set_dataset(str(csv_path))
     screen._feature_filter_combo.setCurrentText("Numeric only")
     screen._top_n_spin.setValue(1)

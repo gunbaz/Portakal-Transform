@@ -96,7 +96,7 @@ class SelectRowsService:
                 display_name=f"{dataset.display_name} (matching)",
                 dataframe=matching_df,
                 row_count=matching_df.height,
-                domain=build_data_domain(matching_df),
+                domain=build_data_domain(matching_df, source_domain=dataset.domain),
             )
 
         non_matching = None
@@ -107,7 +107,7 @@ class SelectRowsService:
                 display_name=f"{dataset.display_name} (unmatched)",
                 dataframe=non_matching_df,
                 row_count=non_matching_df.height,
-                domain=build_data_domain(non_matching_df),
+                domain=build_data_domain(non_matching_df, source_domain=dataset.domain),
             )
 
         return matching, non_matching

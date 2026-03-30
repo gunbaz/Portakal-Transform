@@ -140,7 +140,8 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         for row in range(self.table.rowCount()):
             combo = self.table.cellWidget(row, 1)
             if isinstance(combo, QComboBox):
-                combo.setCurrentText(i18n.t("(Default)"))
+                combo.setCurrentIndex(0)
+        self._check_auto_apply()
 
     def set_input_payload(self, payload) -> None:
         dataset = payload.dataset if payload is not None else None
@@ -165,6 +166,8 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
                 combo = QComboBox()
                 combo.addItem(i18n.t("(Default)"))
                 combo.addItems([i18n.t(m) for m in METHODS])
+                combo.setStyleSheet("QComboBox { color: #2b2b2b; } QComboBox QAbstractItemView { color: #2b2b2b; background: white; }")
+                combo.currentIndexChanged.connect(self._check_auto_apply)
                 self.table.setCellWidget(row, 1, combo)
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
@@ -233,14 +236,13 @@ class ImputeScreen(QWidget, WorkflowNodeScreenSupport):
         for row in range(self.table.rowCount()):
             col_name = self.table.item(row, 0).text()
             combo = self.table.cellWidget(row, 1)
-            if isinstance(combo, QComboBox):
-                method = combo.currentText()
-                if method != "(Default)":
-                    column_methods[col_name] = {
-                        "method": method,
-                        "fixed_value": self._fixed_edit.text(),
-                        "fixed_value_cat": self._fixed_edit_cat.text()
-                    }
+            if isinstance(combo, QComboBox) and combo.currentIndex() > 0:
+                method = METHODS[combo.currentIndex() - 1]
+                column_methods[col_name] = {
+                    "method": method,
+                    "fixed_value": self._fixed_edit.text(),
+                    "fixed_value_cat": self._fixed_edit_cat.text()
+                }
 
         try:
             self._output_dataset = self._service.impute(

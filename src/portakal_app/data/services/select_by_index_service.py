@@ -62,7 +62,7 @@ class SelectByIndexService:
                 display_name=f"{data.display_name} (matching)",
                 dataframe=matching_df,
                 row_count=matching_df.height,
-                domain=build_data_domain(matching_df),
+                domain=build_data_domain(matching_df, source_domain=data.domain),
             )
 
         non_matching = None
@@ -73,7 +73,7 @@ class SelectByIndexService:
                 display_name=f"{data.display_name} (non-matching)",
                 dataframe=non_matching_df,
                 row_count=non_matching_df.height,
-                domain=build_data_domain(non_matching_df),
+                domain=build_data_domain(non_matching_df, source_domain=data.domain),
             )
 
         return matching, non_matching
