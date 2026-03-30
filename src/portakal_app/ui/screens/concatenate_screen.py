@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -28,6 +29,10 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         self._primary: DatasetHandle | None = None
         self._additional: list[DatasetHandle] = []
         self._output_dataset: DatasetHandle | None = None
+        self._apply_timer = QTimer(self)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.setInterval(0)
+        self._apply_timer.timeout.connect(self._deferred_apply)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -144,15 +149,31 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
             # Fallback: single-port connection → treat as additional
             if payload.dataset is not None:
                 self._additional.append(payload.dataset)
+        # Defer UI update + apply so the entire batch of
+        # set_input_payload(None) → set_input_payload(Primary) →
+        # set_input_payload(Additional) is handled as one unit.
+        self._apply_timer.start()
+
+    def _deferred_apply(self) -> None:
+        """Called once after all set_input_payload calls in a batch.
+
+        Mirrors Orange3's handleNewSignals() which runs once after all
+        inputs have been set.
+        """
         self._update_ui_locks()
         self._update_info()
-        # Auto-apply when at least one input is available
-        if self._primary is not None or self._additional:
-            self._apply()
+        self._apply()
 
     def _update_ui_locks(self) -> None:
-        """Disable/enable controls based on connection state (like Orange3)."""
+        """Disable/enable controls based on connection state (like Orange3).
+
+        Orange3 reference (handleNewSignals):
+          mergebox.setDisabled(primary is not None)
+          ignore_names.setEnabled(primary is not None)
+          ignore_compute_value.setDisabled(primary is not None and ignore_names)
+        """
         has_primary = self._primary is not None
+
         # When primary is connected, the domain is taken from primary →
         # the merge-mode choice (union/intersection) is irrelevant.
         self._radio_union.setEnabled(not has_primary)
@@ -161,14 +182,16 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         # "Use column names from the primary table" only makes sense
         # when a primary table is actually connected.
         self._check_primary_names.setEnabled(has_primary)
-        if not has_primary:
-            self._check_primary_names.setChecked(False)
+        # NOTE: Do NOT force‑uncheck here.  During re-propagation the
+        # sequence is  set_input_payload(None) → set_input_payload(Primary)
+        # and force‑unchecking would lose the user's preference.  The
+        # checkbox is disabled when there is no primary, which is enough.
 
         # "Treat variables with the same name..." is disabled when
-        # "ignore names" is active (same as Orange3).
-        self._check_same_formula.setEnabled(
-            not (has_primary and self._check_primary_names.isChecked())
-        )
+        # "ignore names" is active (same as Orange3's
+        # ignore_compute_value.setDisabled(ignore_names)).
+        ignore_names_active = has_primary and self._check_primary_names.isChecked()
+        self._check_same_formula.setEnabled(not ignore_names_active)
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset

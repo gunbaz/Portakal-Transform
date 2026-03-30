@@ -194,10 +194,30 @@ class WorkflowEdgeItem(QGraphicsPathItem):
 
         in_channels = self.target_item.widget_definition.input_channels
         if in_channels and len(in_channels) > 1:
+            multi = set(self.target_item.widget_definition.multi_input_channels)
+            # Compute which channels are available for this edge:
+            # current channel + channels not used by OTHER edges + multi channels
+            used_by_others: set[str] = set()
+            if isinstance(scene, WorkflowScene):
+                for other_edge in scene._edges:
+                    if other_edge is self:
+                        continue
+                    if (other_edge.target_item is self.target_item
+                            and other_edge.target_port_id == self.target_port_id
+                            and other_edge.input_channel):
+                        used_by_others.add(other_edge.input_channel)
+            available = tuple(
+                ch for ch in in_channels
+                if ch == self.input_channel   # always include current
+                or ch not in used_by_others   # include if not used by others
+                or ch in multi                # multi channels always available
+            )
+            if not available:
+                available = in_channels  # fallback
             dialog = ChannelSelectionDialog(
                 self.source_item.display_label,
                 self.target_item.display_label,
-                in_channels,
+                available,
                 parent=parent_widget,
             )
             for radio in dialog._radios:
