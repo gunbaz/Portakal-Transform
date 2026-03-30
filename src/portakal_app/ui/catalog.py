@@ -330,6 +330,7 @@ def build_widgets() -> list[WidgetDefinition]:
             _inputs("Data"),
             _outputs("Data"),
             input_channels=("Primary Data", "Additional Data"),
+            multi_input_channels=("Additional Data",),
         ),
         WidgetDefinition(
             "aggregate-columns",

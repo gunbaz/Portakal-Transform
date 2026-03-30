@@ -113,6 +113,7 @@ class WidgetDefinition:
     output_ports: tuple["PortDefinition", ...] = ()
     output_channels: tuple[str, ...] = ()
     input_channels: tuple[str, ...] = ()
+    multi_input_channels: tuple[str, ...] = ()  # channels that accept multiple connections
 
 
 @dataclass(frozen=True)

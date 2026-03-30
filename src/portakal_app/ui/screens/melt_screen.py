@@ -194,7 +194,7 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
             id_col = None
 
         try:
-            self._output_dataset = self._service.melt(
+            result = self._service.melt(
                 self._dataset_handle,
                 id_column=id_col,
                 ignore_non_numeric=self._ignore_non_numeric.isChecked(),
@@ -202,9 +202,14 @@ class MeltScreen(QWidget, WorkflowNodeScreenSupport):
                 item_name=self._item_name.text() or "item",
                 value_name=self._value_name.text() or "value",
             )
-            self._result_label.setText(
-                i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
-            )
+            if result is None:
+                self._output_dataset = None
+                self._result_label.setText(i18n.t("No features to melt."))
+            else:
+                self._output_dataset = result
+                self._result_label.setText(
+                    i18n.tf("Result: {rows} rows x {cols} columns", rows=self._output_dataset.row_count, cols=self._output_dataset.column_count)
+                )
         except Exception as e:
             self._output_dataset = None
             self._result_label.setText(i18n.tf("Error applying Melt: {error}", error=e))

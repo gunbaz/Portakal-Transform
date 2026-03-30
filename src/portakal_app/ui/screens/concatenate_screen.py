@@ -82,23 +82,26 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         source_layout.addWidget(self._add_source)
         
         name_row = QHBoxLayout()
-        name_lbl = QLabel(i18n.t("Feature name:"))
-        name_lbl.setFixedWidth(80)
-        name_row.addWidget(name_lbl)
+        self._source_name_lbl = QLabel(i18n.t("Feature name:"))
+        self._source_name_lbl.setFixedWidth(80)
+        name_row.addWidget(self._source_name_lbl)
         self._source_name = QLineEdit("Source ID")
         name_row.addWidget(self._source_name)
         source_layout.addLayout(name_row)
         
         place_row = QHBoxLayout()
-        place_lbl = QLabel(i18n.t("Place:"))
-        place_lbl.setFixedWidth(80)
-        place_row.addWidget(place_lbl)
+        self._source_role_lbl = QLabel(i18n.t("Place:"))
+        self._source_role_lbl.setFixedWidth(80)
+        place_row.addWidget(self._source_role_lbl)
         self._source_role = QComboBox()
         self._source_role.addItems([i18n.t("Class attribute"), i18n.t("Meta attribute"), i18n.t("Feature")])
         place_row.addWidget(self._source_role)
         source_layout.addLayout(place_row)
         
         layout.addWidget(source_group)
+
+        # Initially disable sub-controls (checkbox is unchecked)
+        self._sync_source_sub_controls()
 
         self._info_label = QLabel(i18n.t("Primary: -  |  Additional: -"))
         layout.addWidget(self._info_label)
@@ -113,7 +116,7 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         self._mode_group.idClicked.connect(self._check_auto_apply)
         self._check_primary_names.stateChanged.connect(self._on_primary_names_changed)
         self._check_same_formula.stateChanged.connect(self._check_auto_apply)
-        self._add_source.stateChanged.connect(self._check_auto_apply)
+        self._add_source.stateChanged.connect(self._on_add_source_changed)
         self._source_name.textChanged.connect(self._check_auto_apply)
         self._source_role.currentIndexChanged.connect(self._check_auto_apply)
 
@@ -174,6 +177,18 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
         if self.cb_apply_auto.isChecked():
             self._apply()
 
+    def _on_add_source_changed(self):
+        self._sync_source_sub_controls()
+        self._check_auto_apply()
+
+    def _sync_source_sub_controls(self):
+        """Enable/disable Feature name & Place when 'Append data source IDs' is toggled."""
+        enabled = self._add_source.isChecked()
+        self._source_name_lbl.setEnabled(enabled)
+        self._source_name.setEnabled(enabled)
+        self._source_role_lbl.setEnabled(enabled)
+        self._source_role.setEnabled(enabled)
+
     def _on_primary_names_changed(self):
         # When "use primary names" is toggled, lock/unlock the formula checkbox
         self._check_same_formula.setEnabled(
@@ -199,10 +214,13 @@ class ConcatenateScreen(QWidget, WorkflowNodeScreenSupport):
             
         self._check_primary_names.setChecked(bool(payload.get("use_primary_names_only", False)))
         self._add_source.setChecked(bool(payload.get("add_source", False)))
+        self._sync_source_sub_controls()
         self._source_name.setText(str(payload.get("source_name", "Source ID")))
         
-        role = str(payload.get("source_role", "Class attribute"))
-        if self._source_role.findText(role) >= 0:
+        role = payload.get("source_role", 0)
+        if isinstance(role, int) and 0 <= role < self._source_role.count():
+            self._source_role.setCurrentIndex(role)
+        elif isinstance(role, str) and self._source_role.findText(role) >= 0:
             self._source_role.setCurrentText(role)
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 

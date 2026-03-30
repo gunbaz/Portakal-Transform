@@ -885,7 +885,12 @@ class WorkflowScene(QGraphicsScene):
         in_channels = target_node.widget_definition.input_channels
         if in_channels and len(in_channels) > 1:
             used = self._used_input_channels(target_port.node_id, target_port.port_id)
-            available = tuple(ch for ch in in_channels if ch not in used)
+            multi = set(target_node.widget_definition.multi_input_channels)
+            # Multi channels stay available even if already used.
+            available = tuple(
+                ch for ch in in_channels
+                if ch not in used or ch in multi
+            )
             if not available:
                 self.statusMessage.emit("All input channels are already connected.")
                 self._clear_pending_connection()
@@ -1168,7 +1173,10 @@ class WorkflowScene(QGraphicsScene):
             return False, "That input port is already connected."
         if has_input_channels:
             used_channels = self._used_input_channels(target_ref.node_id, target_ref.port_id)
-            available = set(target_node.widget_definition.input_channels) - used_channels
+            multi = set(target_node.widget_definition.multi_input_channels)
+            # Multi channels can accept unlimited connections; only exclusive
+            # channels count as "used" for availability.
+            available = set(target_node.widget_definition.input_channels) - (used_channels - multi)
             if not available:
                 return False, "All input channels are already connected."
         source_label = self._port_label(source_ref)
