@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 import polars as pl
+import numpy as np
+
 from portakal_app.data.models import DatasetHandle, build_data_domain
 
 METHODS = (
@@ -24,12 +26,21 @@ class DiscretizeService:
         dataset: DatasetHandle,
         *,
         default_method: str = "Keep numeric",
-        default_n_bins: int = 4,
+        default_params: dict[str, object] | None = None,
         column_methods: dict[str, dict[str, object]] | None = None,
     ) -> DatasetHandle:
         df = dataset.dataframe
         new_columns: dict[str, pl.Series] = {}
         col_methods = column_methods or {}
+        default_params = default_params or {"n_bins": 4}
+
+        # Target series for Entropy vs. MDL
+        target_series = None
+        target_names = {c.name for c in dataset.domain.target_columns}
+        if target_names:
+            target_col = list(target_names)[0]
+            if target_col in df.columns:
+                target_series = df.get_column(target_col)
 
         for col_name in df.columns:
             series = df.get_column(col_name)
@@ -44,7 +55,7 @@ class DiscretizeService:
             
             if method == "Use default setting":
                 method = default_method
-                params = {"n_bins": default_n_bins}
+                params = default_params
             else:
                 params = method_params
 
@@ -52,25 +63,31 @@ class DiscretizeService:
                 new_columns[col_name] = series
             elif method == "Remove":
                 continue
-            elif method in ("Equal width", "Natural binning"):
-                n_bins = int(params.get("n_bins", default_n_bins))
+            elif method == "Equal width":
+                n_bins = int(params.get("n_bins", default_params.get("n_bins", 4)))
                 new_columns[col_name] = _equal_width_bin(series, col_name, max(2, n_bins))
+            elif method == "Natural binning":
+                n_bins = int(params.get("n_bins", default_params.get("n_bins", 4)))
+                new_columns[col_name] = _natural_bin_bin(series, col_name, max(2, n_bins))
             elif method == "Equal frequency":
-                n_bins = int(params.get("n_bins", default_n_bins))
+                n_bins = int(params.get("n_bins", default_params.get("n_bins", 4)))
                 new_columns[col_name] = _equal_freq_bin(series, col_name, max(2, n_bins))
             elif method == "Fixed width":
-                width = float(params.get("width", 1.0))
+                width = float(params.get("width", default_params.get("width", 1.0)))
                 new_columns[col_name] = _fixed_width_bin(series, col_name, width)
             elif method == "Custom":
-                cuts_str = str(params.get("cuts", ""))
+                cuts_str = str(params.get("cuts", default_params.get("cuts", "")))
                 try:
                     cuts = [float(x.strip()) for x in cuts_str.split(",") if x.strip()]
                     new_columns[col_name] = _custom_bin(series, col_name, cuts)
                 except ValueError:
-                    # fallback to keep if badly formatted
+                    new_columns[col_name] = series
+            elif method == "Entropy vs. MDL":
+                if target_series is not None and col_name != target_series.name:
+                    new_columns[col_name] = _entropy_mdl_bin(series, col_name, target_series)
+                else:
                     new_columns[col_name] = series
             else:
-                # Stub for "Entropy vs. MDL" or "Time interval"
                 new_columns[col_name] = series
 
         result_df = pl.DataFrame(new_columns)
@@ -119,23 +136,136 @@ def _equal_freq_bin(series: pl.Series, name: str, n_bins: int) -> pl.Series:
     if non_null.len() == 0:
         return pl.Series(name, ["?"] * series.len(), dtype=pl.Utf8)
 
-    sorted_vals = sorted(non_null.to_list())
-    n = len(sorted_vals)
-    bin_size = max(1, n // n_bins)
-    thresholds: list[float] = []
-    
-    for i in range(1, n_bins):
-        idx = i * bin_size
-        if idx < n:
-            # Orange style boundary: average of the two adjacent points (left + right) / 2
-            # This ensures the cut point is between the values and not on a value.
-            threshold = (float(sorted_vals[idx - 1]) + float(sorted_vals[idx])) / 2.0
-            thresholds.append(threshold)
+    vals = non_null.cast(pl.Float64).to_list()
+    quantiles = np.linspace(0, 100, n_bins + 1)[1:-1]
+    thresholds = sorted(list(set(np.percentile(vals, quantiles))))
 
     if not thresholds:
-        return pl.Series(name, [f"[{sorted_vals[0]:.2f}]"] * series.len(), dtype=pl.Utf8)
+        return pl.Series(name, [f"[{np.min(vals):.2f}]"] * series.len(), dtype=pl.Utf8)
 
     return _custom_bin(series, name, thresholds)
+
+def _natural_binning_thresholds(min_v: float, max_v: float, n_bins: int) -> list[float]:
+    if min_v >= max_v or n_bins <= 1:
+        return []
+    target_step = (max_v - min_v) / n_bins
+    if target_step <= 0:
+        return []
+    magnitude = 10 ** math.floor(math.log10(target_step))
+    residuals = [1, 2, 2.5, 5, 10]
+    best_step = magnitude
+    best_diff = float('inf')
+    
+    for r in residuals:
+        step = r * magnitude
+        diff = abs(step - target_step)
+        if diff < best_diff:
+            best_diff = diff
+            best_step = step
+            
+    lo = math.floor(min_v / best_step) * best_step
+    hi = math.ceil(max_v / best_step) * best_step
+    
+    thresholds = []
+    curr = lo + best_step
+    while curr < max_v - 1e-9:
+        if curr > min_v + 1e-9:
+            thresholds.append(curr)
+        curr += best_step
+        
+    return thresholds
+
+def _natural_bin_bin(series: pl.Series, name: str, n_bins: int) -> pl.Series:
+    non_null = series.drop_nulls()
+    if non_null.len() == 0:
+        return pl.Series(name, ["?"] * series.len(), dtype=pl.Utf8)
+    
+    vals = non_null.cast(pl.Float64).to_list()
+    min_v, max_v = min(vals), max(vals)
+    if min_v == max_v:
+        return pl.Series(name, [f"[{min_v:.2f}]"] * series.len(), dtype=pl.Utf8)
+
+    thresholds = _natural_binning_thresholds(min_v, max_v, n_bins)
+    if not thresholds:
+        return _equal_width_bin(series, name, n_bins)
+    return _custom_bin(series, name, thresholds)
+
+def _mdl_discretize_recursive(vals: list[float], target: list[str], min_v: float, max_v: float) -> list[float]:
+    n = len(vals)
+    if n < 2:
+        return []
+        
+    def entropy(targets: list[str]) -> float:
+        counts = {}
+        for t in targets:
+            counts[t] = counts.get(t, 0) + 1
+        total = len(targets)
+        ent = 0.0
+        for c in counts.values():
+            p = c / total
+            if p > 0:
+                ent -= p * math.log2(p)
+        return ent
+
+    base_ent = entropy(target)
+    
+    best_gain = -1.0
+    best_idx = -1
+    best_cut = None
+    
+    for i in range(1, n):
+        if vals[i] == vals[i-1]:
+            continue
+            
+        cut = (vals[i] + vals[i-1]) / 2.0
+        
+        left_t = target[:i]
+        right_t = target[i:]
+        
+        ent1 = entropy(left_t)
+        ent2 = entropy(right_t)
+        
+        cond_ent = (len(left_t) / n) * ent1 + (len(right_t) / n) * ent2
+        gain = base_ent - cond_ent
+        
+        if gain > best_gain:
+            best_gain = gain
+            best_idx = i
+            best_cut = cut
+            
+    if best_idx == -1 or best_cut is None:
+        return []
+        
+    left_t = target[:best_idx]
+    right_t = target[best_idx:]
+    k = len(set(target))
+    k1 = len(set(left_t))
+    k2 = len(set(right_t))
+    
+    delta = math.log2(3**k - 2) - (k * base_ent - k1 * entropy(left_t) - k2 * entropy(right_t))
+    if best_gain > (math.log2(n - 1) + delta) / n:
+        left_cuts = _mdl_discretize_recursive(vals[:best_idx], left_t, min_v, best_cut)
+        right_cuts = _mdl_discretize_recursive(vals[best_idx:], right_t, best_cut, max_v)
+        return left_cuts + [best_cut] + right_cuts
+    else:
+        return []
+
+def _entropy_mdl_bin(series: pl.Series, col_name: str, target_series: pl.Series) -> pl.Series:
+    non_null_mask = series.is_not_null() & target_series.is_not_null()
+    if non_null_mask.sum() < 2:
+        return series
+        
+    filtered_series = series.filter(non_null_mask).cast(pl.Float64)
+    filtered_target = target_series.filter(non_null_mask).cast(pl.Utf8)
+    
+    f_list = filtered_series.to_list()
+    t_list = filtered_target.to_list()
+    
+    pairs = sorted(zip(f_list, t_list), key=lambda x: x[0])
+    vals, targets = zip(*pairs)
+    
+    cuts = _mdl_discretize_recursive(list(vals), list(targets), vals[0], vals[-1])
+    return _custom_bin(series, col_name, cuts)
 
 def _fixed_width_bin(series: pl.Series, name: str, width: float) -> pl.Series:
     if width <= 0:

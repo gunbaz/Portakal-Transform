@@ -48,8 +48,13 @@ class PreprocessService:
             elif step.name == "Remove rows with missing values":
                 df = df.drop_nulls()
             elif step.name == "Remove constant features":
-                cols = [c for c in feature_cols
-                        if df.get_column(c).drop_nulls().n_unique() <= 1]
+                cols = []
+                for c in df.columns:
+                    valid_series = df.get_column(c).drop_nulls()
+                    if valid_series.dtype in (pl.Utf8, pl.Categorical):
+                        valid_series = valid_series.filter(valid_series.cast(pl.Utf8) != "")
+                    if valid_series.n_unique() <= 1:
+                        cols.append(c)
                 if cols:
                     df = df.drop(cols)
             elif step.name == "Remove features with too many missing values":
@@ -208,7 +213,7 @@ def _continuize(
                     for v in str_series.to_list()]
             result_series.append(pl.Series(c, vals, dtype=pl.Float64))
 
-        elif method == "Most frequent as base":
+        elif method == "Most frequent is base":
             freq: dict[str, int] = {}
             for v in str_series.to_list():
                 if v:
@@ -226,11 +231,15 @@ def _continuize(
 
         elif method == "Divide by number of values":
             n = len(unique_vals)
-            for val in unique_vals:
-                ind = [(1.0 / n) if str(v) == val else 0.0
-                       for v in str_series.to_list()]
-                result_series.append(
-                    pl.Series(f"{c}={val}", ind, dtype=pl.Float64))
+            if n > 1:
+                mapping = {v: float(i) / (n - 1) for i, v in enumerate(unique_vals)}
+            elif n == 1:
+                mapping = {unique_vals[0]: 0.0}
+            else:
+                mapping = {}
+            vals = [mapping.get(str(v), None) if str(v) != "" else None
+                    for v in str_series.to_list()]
+            result_series.append(pl.Series(c, vals, dtype=pl.Float64))
         else:
             result_series.append(series)
 
@@ -575,25 +584,24 @@ def _cur_decomposition(
         _U, _s, Vt = np.linalg.svd(X, full_matrices=False)
         V = Vt[:rank].T  # (n_features, rank)
         leverage = np.sum(V ** 2, axis=1) / rank
-        c_factor = rank * math.log(max(rank, 2)) / max(max_error ** 2, 0.01)
-        probs = np.minimum(1.0, c_factor * leverage)
-        rng = np.random.RandomState()
-        selected_mask = rng.rand(len(numeric_features)) < probs
-        # guarantee at least `rank` columns
-        if int(selected_mask.sum()) < min(rank, len(numeric_features)):
-            top_idx = np.argsort(-leverage)[:min(rank, len(numeric_features))]
-            selected_mask[top_idx] = True
-        selected_cols = [
-            numeric_features[i]
-            for i in range(len(numeric_features)) if selected_mask[i]
-        ]
+        
+        c_factor = rank * math.log(max(rank, 2)) / max(max_error ** 2, 0.0001)
+        num_cols = min(int(math.ceil(c_factor)), len(numeric_features))
+        
+        top_idx = np.argsort(-leverage)[:num_cols]
+        selected_cols_info = [(numeric_features[i], leverage[i]) for i in top_idx]
     except np.linalg.LinAlgError:
         return df
 
-    if not selected_cols:
+    if not selected_cols_info:
         return df
 
-    result_series = [df.get_column(c) for c in selected_cols]
+    result_series = []
+    for col_name, score in selected_cols_info:
+        s = df.get_column(col_name)
+        new_name = f"{col_name} ({score:.4f})"
+        result_series.append(s.alias(new_name))
+        
     for c in df.columns:
         if c in target_names or c in meta_names:
             result_series.append(df.get_column(c))

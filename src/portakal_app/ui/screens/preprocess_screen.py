@@ -446,6 +446,7 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         footer = QHBoxLayout()
         self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(False)
+        self.cb_apply_auto.toggled.connect(lambda _: self._check_auto_apply())
         footer.addWidget(self.cb_apply_auto)
         footer.addStretch(1)
 
@@ -469,6 +470,18 @@ class PreprocessScreen(QWidget, WorkflowNodeScreenSupport):
         
         # Listen for close
         editor.btn_remove.clicked.connect(lambda: self._remove_step(editor))
+        
+        # Listen for param changes for auto apply
+        for widget in editor.findChildren(QCheckBox):
+            widget.toggled.connect(lambda _: self._check_auto_apply())
+        for widget in editor.findChildren(QRadioButton):
+            widget.toggled.connect(lambda _: self._check_auto_apply())
+        for widget in editor.findChildren(QSpinBox):
+            widget.valueChanged.connect(lambda _: self._check_auto_apply())
+        for widget in editor.findChildren(QDoubleSpinBox):
+            widget.valueChanged.connect(lambda _: self._check_auto_apply())
+        for widget in editor.findChildren(QComboBox):
+            widget.currentTextChanged.connect(lambda _: self._check_auto_apply())
         
         self._active_editors.append(editor)
         self._pipeline_layout.addWidget(editor)

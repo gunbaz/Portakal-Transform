@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QComboBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 from portakal_app.data.models import DatasetHandle
 from portakal_app.data.services.discretize_service import (
@@ -30,6 +30,8 @@ from portakal_app.ui import i18n
 
 
 class DiscretizeConfigurator(QGroupBox):
+    param_changed = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(i18n.t("Discretize Settings"), parent)
         self.methods = METHODS
@@ -223,6 +225,8 @@ class DiscretizeConfigurator(QGroupBox):
                     del self.overrides[col_id]
             else:
                 self.overrides[col_id] = conf
+                
+        self.param_changed.emit()
 
     def reset_all(self):
         self.overrides.clear()
@@ -262,6 +266,7 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         footer.addStretch(1)
         self.cb_apply_auto = QCheckBox(i18n.t("Apply Automatically"))
         self.cb_apply_auto.setChecked(True)
+        self.cb_apply_auto.toggled.connect(lambda _: self._check_auto_apply())
         footer.addWidget(self.cb_apply_auto)
 
         self._apply_button = QPushButton(i18n.t("Apply"))
@@ -269,6 +274,12 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+        
+        self.configurator.param_changed.connect(self._check_auto_apply)
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def _reset_all(self):
         self.configurator.reset_all()
@@ -286,6 +297,15 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
             num_cols = [c for c in df.columns if df.get_column(c).dtype.is_numeric()]
             # Detect if there's a target column in the data domain
             has_target = any(col.role == "target" for col in dataset.domain.columns)
+            
+            # Disable Entropy MDL if no target
+            if not has_target:
+                if self.configurator.preset_method == "Entropy vs. MDL":
+                    self.configurator.preset_method = "Keep numeric"
+                for cid, cnf in list(self.configurator.overrides.items()):
+                    if cnf.get("method") == "Entropy vs. MDL":
+                        del self.configurator.overrides[cid]
+            
             self.configurator._populate_list(num_cols, has_target=has_target)
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
@@ -344,14 +364,13 @@ class DiscretizeScreen(QWidget, WorkflowNodeScreenSupport):
         try:
             # Reconstruct default configuration exactly
             preset_conf = self.configurator.overrides.get("__PRESET__", {})
-            default_n_bins = int(preset_conf.get("n_bins", 2))
             
             clean_overrides = {k: v for k, v in self.configurator.overrides.items() if k != "__PRESET__"}
 
             self._output_dataset = self._service.discretize(
                 self._dataset_handle,
                 default_method=self.configurator.preset_method,
-                default_n_bins=default_n_bins,
+                default_params=preset_conf,
                 column_methods=clean_overrides,
             )
 

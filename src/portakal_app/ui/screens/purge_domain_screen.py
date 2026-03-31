@@ -121,6 +121,7 @@ class PurgeDomainScreen(QWidget, WorkflowNodeScreenSupport):
         footer = QHBoxLayout()
         self.cb_apply_auto = QCheckBox(i18n.t("Send Automatically"))
         self.cb_apply_auto.setChecked(True)
+        self.cb_apply_auto.toggled.connect(lambda _: self._check_auto_apply())
         footer.addWidget(self.cb_apply_auto)
         
         footer.addStretch(1)
