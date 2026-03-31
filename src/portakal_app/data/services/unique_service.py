@@ -3,6 +3,8 @@ from __future__ import annotations
 import random
 from dataclasses import replace
 
+import polars as pl
+
 from portakal_app.data.models import DatasetHandle, build_data_domain
 
 
@@ -28,7 +30,7 @@ class UniqueService:
         *,
         group_by_columns: list[str],
         tiebreaker: str = "First instance",
-    ) -> DatasetHandle:
+    ) -> tuple[DatasetHandle, DatasetHandle | None, DatasetHandle]:
         df = dataset.dataframe
 
         # If no columns selected, use ALL columns (Orange default behaviour)
@@ -71,14 +73,56 @@ class UniqueService:
         # ── Column reorder: Target → Meta → Features ──────────────────
         result = _reorder_columns(result, dataset.domain)
 
-        return replace(
+        unique_dataset = replace(
             dataset,
             dataset_id=f"{dataset.dataset_id}-unique",
             display_name=f"{dataset.display_name} (unique)",
             dataframe=result,
             row_count=result.height,
+            column_count=result.width,
             domain=build_data_domain(result, source_domain=dataset.domain),
         )
+
+        # ── Removed duplicates ─────────────────────────────────────────
+        removed_indices = list(set(range(df.height)) - set(selection))
+        removed_indices.sort()
+        
+        removed_dataset = None
+        if removed_indices:
+            removed_df = df[removed_indices]
+            removed_df = _reorder_columns(removed_df, dataset.domain)
+            removed_dataset = replace(
+                dataset,
+                dataset_id=f"{dataset.dataset_id}-removed",
+                display_name=f"{dataset.display_name} (removed)",
+                dataframe=removed_df,
+                row_count=removed_df.height,
+                column_count=removed_df.width,
+                domain=build_data_domain(removed_df, source_domain=dataset.domain),
+            )
+
+        # ── Annotated Data ──────────────────────────────────────────────
+        selection_set = set(selection)
+        duplicate_col_data = ["No" if i in selection_set else "Yes" for i in range(df.height)]
+        annotated_df = df.with_columns(pl.Series("Duplicate", duplicate_col_data))
+        
+        annotated_domain = build_data_domain(annotated_df, source_domain=dataset.domain)
+        new_columns = [replace(c, role="meta") if c.name == "Duplicate" else c for c in annotated_domain.columns]
+        annotated_domain = replace(annotated_domain, columns=tuple(new_columns))
+        
+        annotated_df = _reorder_columns(annotated_df, annotated_domain)
+
+        annotated_dataset = replace(
+            dataset,
+            dataset_id=f"{dataset.dataset_id}-annotated",
+            display_name=f"{dataset.display_name} (annotated)",
+            dataframe=annotated_df,
+            row_count=annotated_df.height,
+            column_count=annotated_df.width,
+            domain=annotated_domain,
+        )
+
+        return unique_dataset, removed_dataset, annotated_dataset
 
 
 def _reorder_columns(df, domain):

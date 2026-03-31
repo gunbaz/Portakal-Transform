@@ -29,6 +29,8 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         self._service = UniqueService()
         self._dataset_handle: DatasetHandle | None = None
         self._output_dataset: DatasetHandle | None = None
+        self._output_removed: DatasetHandle | None = None
+        self._output_annotated: DatasetHandle | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -128,6 +130,8 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
         dataset = payload.dataset if payload is not None else None
         self._dataset_handle = dataset
         self._output_dataset = None
+        self._output_removed = None
+        self._output_annotated = None
         self._column_list.clear()
         self._filter_edit.clear()
 
@@ -153,7 +157,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
                 item.setSelected(True)
                 self._column_list.addItem(item)
             self._status_label.setText(
-                i18n.tf("Input: {n} rows", n=dataset.row_count)
+                i18n.tf("Input: {n} satır", n=dataset.row_count)
             )
         else:
             self._dataset_label.setText(i18n.t("Dataset: none"))
@@ -164,6 +168,13 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
 
     def current_output_dataset(self) -> DatasetHandle | None:
         return self._output_dataset
+
+    def current_output_datasets(self) -> dict[str, DatasetHandle | None] | None:
+        return {
+            "Unique Data": self._output_dataset,
+            "Removed Duplicates": self._output_removed,
+            "Annotated Data": self._output_annotated,
+        }
 
     def serialize_node_state(self) -> dict[str, object]:
         selected = self._get_selected_col_names()
@@ -224,17 +235,22 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
     def _apply(self) -> None:
         if self._dataset_handle is None:
             self._output_dataset = None
+            self._output_removed = None
+            self._output_annotated = None
             self._status_label.setText("")
             self._notify_output_changed()
             return
 
         selected_cols = self._get_selected_col_names()
 
-        self._output_dataset = self._service.filter_unique(
+        unique_data, removed_data, annotated_data = self._service.filter_unique(
             self._dataset_handle,
             group_by_columns=selected_cols,
             tiebreaker=self._tiebreaker_combo.currentText(),
         )
+        self._output_dataset = unique_data
+        self._output_removed = removed_data
+        self._output_annotated = annotated_data
 
         before = self._dataset_handle.row_count
         after = self._output_dataset.row_count
@@ -242,7 +258,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
 
         self._status_label.setText(
             i18n.tf(
-                "Input: {before} → Output: {after} ({removed} duplicates removed)",
+                "Input: {before} satır → Output: {after} satır ({removed} tekrarlı satır kaldırıldı)",
                 before=before,
                 after=after,
                 removed=removed,
@@ -268,7 +284,7 @@ class UniqueScreen(QWidget, WorkflowNodeScreenSupport):
             removed = before - after
             self._status_label.setText(
                 i18n.tf(
-                    "Input: {before} → Output: {after} ({removed} duplicates removed)",
+                    "Input: {before} satır → Output: {after} satır ({removed} tekrarlı satır kaldırıldı)",
                     before=before,
                     after=after,
                     removed=removed,

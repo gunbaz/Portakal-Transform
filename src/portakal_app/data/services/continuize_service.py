@@ -24,6 +24,7 @@ CONTINUOUS_METHODS = (
     "Scale to σ²=1",
     "Normalize to interval [-1, 1]",
     "Normalize to interval [0, 1]",
+    "Normalize to interval [a, b]",
 )
 
 class ContinuizeService:
@@ -35,6 +36,7 @@ class ContinuizeService:
         continuous_preset: str = "Keep as it is",
         column_methods: dict[str, str] | None = None,
         categorical_orders: dict[str, list[str]] | None = None,
+        normalize_custom_bounds: tuple[float, float] = (0.0, 1.0),
     ) -> DatasetHandle:
         df = dataset.dataframe
         result_series: list[pl.Series] = []
@@ -57,7 +59,7 @@ class ContinuizeService:
             if series.dtype.is_numeric():
                 if method == "Use preset":
                     method = continuous_preset
-                result_series.extend(_transform_continuous(series, col_name, method))
+                result_series.extend(_transform_continuous(series, col_name, method, normalize_custom_bounds))
             elif series.dtype == (pl.Utf8) or series.dtype == pl.Categorical:
                 if method == "Use preset":
                     method = discrete_preset
@@ -91,7 +93,7 @@ class ContinuizeService:
         )
 
 
-def _transform_continuous(series: pl.Series, name: str, method: str) -> list[pl.Series]:
+def _transform_continuous(series: pl.Series, name: str, method: str, custom_bounds: tuple[float, float] = (0.0, 1.0)) -> list[pl.Series]:
     if method == "Keep as it is" or method == "Keep as is":
         return [series]
 
@@ -122,6 +124,9 @@ def _transform_continuous(series: pl.Series, name: str, method: str) -> list[pl.
         return [((float_series - min_val) / val_range).alias(name)]
     elif method == "Normalize to interval [-1, 1]" or method == "Normalize to [-1, 1]":
         return [((float_series - min_val) / val_range * 2 - 1).alias(name)]
+    elif method == "Normalize to interval [a, b]" or method == "Normalize to [a, b]":
+        a, b = custom_bounds
+        return [((float_series - min_val) / val_range * (b - a) + a).alias(name)]
     return [series]
 
 

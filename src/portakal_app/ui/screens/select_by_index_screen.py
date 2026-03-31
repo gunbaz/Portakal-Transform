@@ -25,6 +25,7 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         self._subset_handle: DatasetHandle | None = None
         self._output_matching: DatasetHandle | None = None
         self._output_non_matching: DatasetHandle | None = None
+        self._output_annotated: DatasetHandle | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -95,6 +96,7 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         return {
             "Matching Data": self._output_matching,
             "Non-matching Data": self._output_non_matching,
+            "Annotated Data": self._output_annotated,
         }
 
     def serialize_node_state(self) -> dict[str, object]:
@@ -126,13 +128,15 @@ class SelectByIndexScreen(QWidget, WorkflowNodeScreenSupport):
         if self._dataset_handle is None or self._subset_handle is None:
             self._output_matching = None
             self._output_non_matching = None
+            self._output_annotated = None
             self._result_info.setText(i18n.t("Matching: -  |  Non-matching: -  |  Total: -"))
             self._notify_output_changed()
             return
 
-        matching, non_matching = self._service.select(self._dataset_handle, self._subset_handle)
+        matching, non_matching, annotated = self._service.select(self._dataset_handle, self._subset_handle)
         self._output_matching = matching
         self._output_non_matching = non_matching
+        self._output_annotated = annotated
 
         m_count = matching.row_count if matching else 0
         nm_count = non_matching.row_count if non_matching else 0

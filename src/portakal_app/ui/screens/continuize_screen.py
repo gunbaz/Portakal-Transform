@@ -110,6 +110,33 @@ class TypeConfigurator(QGroupBox):
             self.group.addButton(rb, idx)
             self.radio_buttons.append(rb)
             right_panel.addWidget(rb)
+            
+            if method == "Normalize to interval [a, b]":
+                from PySide6.QtWidgets import QDoubleSpinBox
+                self.custom_bounds_widget = QWidget()
+                cb_layout = QHBoxLayout(self.custom_bounds_widget)
+                cb_layout.setContentsMargins(20, 0, 0, 0)
+                
+                self.spin_a = QDoubleSpinBox()
+                self.spin_a.setRange(-999999.0, 999999.0)
+                self.spin_a.setValue(0.0)
+                
+                self.spin_b = QDoubleSpinBox()
+                self.spin_b.setRange(-999999.0, 999999.0)
+                self.spin_b.setValue(1.0)
+                
+                cb_layout.addWidget(QLabel("a:"))
+                cb_layout.addWidget(self.spin_a)
+                cb_layout.addWidget(QLabel("b:"))
+                cb_layout.addWidget(self.spin_b)
+                cb_layout.addStretch(1)
+                
+                right_panel.addWidget(self.custom_bounds_widget)
+                self.custom_bounds_widget.setEnabled(False)
+                
+                self.spin_a.valueChanged.connect(lambda _: self.param_changed.emit())
+                self.spin_b.valueChanged.connect(lambda _: self.param_changed.emit())
+
             rb.clicked.connect(self._on_radio_change)
 
         right_panel.addStretch(1)
@@ -184,6 +211,8 @@ class TypeConfigurator(QGroupBox):
         try:
             idx = self.methods.index(val)
             self.radio_buttons[idx].setChecked(True)
+            if hasattr(self, "custom_bounds_widget"):
+                self.custom_bounds_widget.setEnabled(val == "Normalize to interval [a, b]")
         except ValueError:
             pass
             
@@ -222,6 +251,9 @@ class TypeConfigurator(QGroupBox):
         if method_idx < 0:
             return
         method = self.methods[method_idx]
+        
+        if hasattr(self, "custom_bounds_widget"):
+            self.custom_bounds_widget.setEnabled(method == "Normalize to interval [a, b]")
 
         col_ids = [item.data(Qt.ItemDataRole.UserRole) for item in selected]
 
@@ -351,12 +383,17 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
         return self._output_dataset
 
     def serialize_node_state(self) -> dict[str, object]:
+        bounds = (0.0, 1.0)
+        if hasattr(self.num_config, "spin_a"):
+            bounds = (self.num_config.spin_a.value(), self.num_config.spin_b.value())
+            
         return {
             "discrete_preset": self.cat_config.preset_value,
             "continuous_preset": self.num_config.preset_value,
             "discrete_overrides": self.cat_config.overrides,
             "continuous_overrides": self.num_config.overrides,
             "categorical_orders": self.cat_config.categorical_orders,
+            "custom_bounds": bounds,
             "auto_apply": self.cb_apply_auto.isChecked()
         }
 
@@ -367,6 +404,12 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
         self.cat_config.overrides = payload.get("discrete_overrides", {})
         self.num_config.overrides = payload.get("continuous_overrides", {})
         self.cat_config.categorical_orders = payload.get("categorical_orders", {})
+        
+        bounds_lst = payload.get("custom_bounds", [0.0, 1.0])
+        if hasattr(self.num_config, "spin_a"):
+            self.num_config.spin_a.setValue(bounds_lst[0])
+            self.num_config.spin_b.setValue(bounds_lst[1])
+
         self.cb_apply_auto.setChecked(bool(payload.get("auto_apply", True)))
 
         # Update visuals for presets
@@ -409,12 +452,25 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
         all_methods.update(self.cat_config.overrides)
         all_methods.update(self.num_config.overrides)
 
+        a, b = 0.0, 1.0
+        if hasattr(self.num_config, "spin_a"):
+            a = self.num_config.spin_a.value()
+            b = self.num_config.spin_b.value()
+
+        if a >= b:
+             self._output_dataset = None
+             self._result_label.setText(i18n.t("Error: Lower bound must be smaller than upper bound"))
+             self._notify_output_changed()
+             return
+
         try:
             self._output_dataset = self._service.continuize(
                 self._dataset_handle,
                 discrete_preset=self.cat_config.preset_value,
                 continuous_preset=self.num_config.preset_value,
                 column_methods=all_methods,
+                categorical_orders=self.cat_config.categorical_orders,
+                normalize_custom_bounds=(a, b),
             )
 
             before = self._dataset_handle.column_count

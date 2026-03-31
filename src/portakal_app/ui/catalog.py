@@ -202,7 +202,7 @@ def build_widgets() -> list[WidgetDefinition]:
             "index",
             _inputs("Data"),
             _outputs("Data"),
-            output_channels=("Matching Data", "Non-matching Data"),
+            output_channels=("Matching Data", "Non-matching Data", "Annotated Data"),
             input_channels=("Data", "Data Subset"),
         ),
         WidgetDefinition(
@@ -237,6 +237,7 @@ def build_widgets() -> list[WidgetDefinition]:
             "unique",
             _inputs("Data"),
             _outputs("Data"),
+            output_channels=("Unique Data", "Removed Duplicates", "Annotated Data"),
         ),
         WidgetDefinition(
             "apply-domain",
