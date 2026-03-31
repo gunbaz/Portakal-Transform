@@ -52,24 +52,49 @@ class PurgeDomainService:
                 or (is_meta and remove_unused_metas)
             )
 
-            n_unique = series.drop_nulls().n_unique()
+            valid_series = series.drop_nulls()
+            if valid_series.dtype in (pl.Utf8, pl.Categorical):
+                valid_series = valid_series.filter(valid_series.cast(pl.Utf8) != "")
+                
+            n_unique = valid_series.n_unique()
             if remove_constant and n_unique <= 1:
                 columns_to_drop.append(col_schema.name)
                 stats[group_key]["removed"] += 1
                 continue
 
+            # Remove feature completely if 100% null
             if remove_unused and series.null_count() == series.len():
                 columns_to_drop.append(col_schema.name)
                 stats[group_key]["removed"] += 1
                 continue
 
+            # Check for unused categories (Reduce)
+            if remove_unused and series.dtype in (pl.Utf8, pl.Categorical):
+                if n_unique < col_schema.unique_count_hint:
+                    stats[group_key]["reduced"] += 1
+                    # Physically purge categories if categorical
+                    if series.dtype == pl.Categorical:
+                        series = series.cast(pl.Utf8).cast(pl.Categorical)
+                        df = df.with_columns(series.alias(col_schema.name))
+
             should_sort = (
                 (is_feature and sort_feature_values)
                 or (is_target and sort_class_values)
             )
-            if should_sort and (series.dtype == pl.Utf8 or series.dtype == pl.Categorical):
-                if group_key in stats and "sorted" in stats[group_key]:
+            if should_sort and series.dtype == pl.Categorical:
+                if hasattr(series.cat, "set_ordering"):
+                    df = df.with_columns(series.cat.set_ordering("lexical").alias(col_schema.name))
                     stats[group_key]["sorted"] += 1
+                else:
+                    try:
+                        # Fallback for old polars versions
+                        df = df.with_columns(series.cast(pl.Categorical(ordering="lexical")).alias(col_schema.name))
+                        stats[group_key]["sorted"] += 1
+                    except Exception:
+                        pass
+            elif should_sort and series.dtype == pl.Utf8:
+                # Strings inherently sort lexically, we just count them as having been naturally sorted.
+                stats[group_key]["sorted"] += 1
 
         if columns_to_drop:
             df = df.drop(columns_to_drop)

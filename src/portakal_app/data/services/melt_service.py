@@ -84,16 +84,24 @@ class MeltService:
 
         # --- filter NaN / null values (Orange3 always does this) -----------
         val_col = pl.col(value_name)
-        try:
-            melted = melted.with_columns(val_col.cast(pl.Float64, strict=False))
-        except Exception:
-            pass
-
-        # Remove null / NaN rows
-        melted = melted.filter(val_col.is_not_null() & val_col.is_not_nan())
+        if ignore_non_numeric:
+            try:
+                melted = melted.with_columns(val_col.cast(pl.Float64, strict=False))
+            except Exception:
+                pass
+            melted = melted.filter(val_col.is_not_null() & val_col.is_not_nan())
+        else:
+            melted = melted.filter(val_col.is_not_null())
+            if melted.schema[value_name] in (pl.Float32, pl.Float64):
+                melted = melted.filter(val_col.is_not_nan())
+            elif melted.schema[value_name] in (pl.Utf8, pl.Categorical):
+                melted = melted.filter((val_col != "nan") & (val_col != "NaN"))
 
         # --- exclude zeros -------------------------------------------------
         if exclude_zeros:
+            val_dtype = melted.schema[value_name]
+            is_string_type = val_dtype in (pl.Utf8, pl.Categorical)
+            
             if not ignore_non_numeric:
                 # When non-numeric (discrete) features are included,
                 # Orange3 keeps discrete rows even when their value == 0.
@@ -103,9 +111,17 @@ class MeltService:
                     if col.logical_type not in ("numeric", "boolean")
                 }
                 is_discrete_row = pl.col(item_name).is_in(list(discrete_names))
-                melted = melted.filter(is_discrete_row | (val_col != 0.0))
+                if is_string_type:
+                    non_zero_cond = (val_col != "0") & (val_col != "0.0")
+                else:
+                    non_zero_cond = (val_col != 0)
+                melted = melted.filter(is_discrete_row | non_zero_cond)
             else:
-                melted = melted.filter(val_col != 0.0)
+                if is_string_type:
+                    non_zero_cond = (val_col != "0") & (val_col != "0.0")
+                else:
+                    non_zero_cond = (val_col != 0)
+                melted = melted.filter(non_zero_cond)
 
         # --- build output --------------------------------------------------
         return replace(
