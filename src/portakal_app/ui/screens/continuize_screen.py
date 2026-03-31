@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import polars as pl
 
 from portakal_app.data.models import DatasetHandle
@@ -56,13 +56,14 @@ class CategoryOrderDialog(QDialog):
 
 class TypeConfigurator(QGroupBox):
     """Panel for one variable type (discrete / continuous).
-    
+
     Features matching Orange:
     - Multi-select columns (Extended Selection)
     - Filter / search box
     - Default preset row (★)
     - Per-column overrides via radio buttons
     """
+    param_changed = Signal()
 
     def __init__(
         self,
@@ -242,6 +243,8 @@ class TypeConfigurator(QGroupBox):
                     self.overrides[col_id] = method
                     item.setText(f"{col_id}: {method}")
 
+        self.param_changed.emit()
+
     def reset_all(self):
         self.overrides.clear()
         # Refresh list labels
@@ -303,6 +306,15 @@ class ContinuizeScreen(QWidget, WorkflowNodeScreenSupport):
         self._apply_button.clicked.connect(self._apply)
         footer.addWidget(self._apply_button)
         layout.addLayout(footer)
+
+        # Connect parameter changes to auto-apply
+        self.cat_config.param_changed.connect(self._check_auto_apply)
+        self.num_config.param_changed.connect(self._check_auto_apply)
+        self.cb_apply_auto.toggled.connect(lambda _: self._check_auto_apply())
+
+    def _check_auto_apply(self):
+        if self.cb_apply_auto.isChecked():
+            self._apply()
 
     def _reset_all(self):
         self.cat_config.reset_all()
